@@ -642,6 +642,338 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+async function oauthGetSettings() {
+  const rows = await db.prepare('SELECT key, value FROM settings').all();
+  const s = {};
+  for (const r of rows) s[r.key] = r.value;
+  return s;
+}
+
+async function oauthFindOrCreateUser(profile) {
+  const email = profile.email;
+  if (!email) return null;
+  let user = await db.prepare('SELECT * FROM users WHERE email = $1').get(email);
+  if (!user) {
+    const id = uuidv4();
+    const hashed = await bcrypt.hash(uuidv4(), 10);
+    const referralCode = 'ROYAL' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    await db.prepare('INSERT INTO users (id, name, email, password, role, referral_code) VALUES ($1, $2, $3, $4, $5, $6)').run(id, profile.name || email.split('@')[0], email, hashed, 'customer', referralCode);
+    user = await db.prepare('SELECT * FROM users WHERE id = $1').get(id);
+  }
+  return user;
+}
+
+async function oauthFindOrCreateUserAsync(profile, provider) {
+  return oauthFindOrCreateUser(profile);
+}
+
+// Google OAuth
+app.get('/api/auth/google', async (req, res) => {
+  try {
+    const s = await oauthGetSettings();
+    const clientId = s.google_client_id;
+    if (!clientId) return res.redirect('/devlopment/login?error=Google+login+not+configured');
+    const redirectUri = `${req.protocol}://${req.get('host')}/devlopment/api/auth/google/callback`;
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=email%20profile`;
+    res.redirect(url);
+  } catch (e) {
+    res.redirect('/devlopment/login?error=Google+login+failed');
+  }
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    const s = await oauthGetSettings();
+    const { code } = req.query;
+    if (!code) return res.redirect('/devlopment/login?error=No+code+received');
+    const redirectUri = `${req.protocol}://${req.get('host')}/devlopment/api/auth/google/callback`;
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: s.google_client_id,
+        client_secret: s.google_client_secret,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    const { access_token } = tokenData;
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    const profile = await profileRes.json();
+    const user = await oauthFindOrCreateUser({ email: profile.email, name: profile.name });
+    if (!user) return res.redirect('/devlopment/login?error=Email+required');
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.redirect(`/devlopment/login?token=${token}`);
+  } catch (e) {
+    res.redirect('/devlopment/login?error=Google+login+failed');
+  }
+});
+
+// Discord OAuth
+app.get('/api/auth/discord', async (req, res) => {
+  try {
+    const s = await oauthGetSettings();
+    const clientId = s.discord_client_id;
+    if (!clientId) return res.redirect('/devlopment/login?error=Discord+login+not+configured');
+    const redirectUri = `${req.protocol}://${req.get('host')}/devlopment/api/auth/discord/callback`;
+    const url = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify%20email`;
+    res.redirect(url);
+  } catch (e) {
+    res.redirect('/devlopment/login?error=Discord+login+failed');
+  }
+});
+
+app.get('/api/auth/discord/callback', async (req, res) => {
+  try {
+    const s = await oauthGetSettings();
+    const { code } = req.query;
+    if (!code) return res.redirect('/devlopment/login?error=No+code+received');
+    const redirectUri = `${req.protocol}://${req.get('host')}/devlopment/api/auth/discord/callback`;
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: s.discord_client_id,
+        client_secret: s.discord_client_secret,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+    const tokenData = await tokenRes.json();
+    const { access_token } = tokenData;
+    const profileRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    const profile = await profileRes.json();
+    const user = await oauthFindOrCreateUser({ email: profile.email, name: profile.global_name || profile.username });
+    if (!user) return res.redirect('/devlopment/login?error=Email+required');
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.redirect(`/devlopment/login?token=${token}`);
+  } catch (e) {
+    res.redirect('/devlopment/login?error=Discord+login+failed');
+  }
+});
+
+// === Payment Routes ===
+
+async function getRzKey() {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'rz_key_id'").get();
+  return r?.value || process.env.RZ_KEY_ID || '';
+}
+
+async function getRzSecret() {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'rz_key_secret'").get();
+  return r?.value || process.env.RZ_KEY_SECRET || '';
+}
+
+async function getCfClientId() {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'cf_client_id'").get();
+  return r?.value || process.env.CF_CLIENT_ID || '';
+}
+
+async function getCfClientSecret() {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'cf_client_secret'").get();
+  return r?.value || process.env.CF_CLIENT_SECRET || '';
+}
+
+async function isCfTestMode() {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'cf_test_mode'").get();
+  return r?.value !== 'false';
+}
+
+function rzBasicAuth(key, secret) {
+  return 'Basic ' + Buffer.from(key + ':' + secret).toString('base64');
+}
+
+async function markInvoicePaid(invoiceId, paymentRef, method) {
+  const invoice = await db.prepare('SELECT * FROM invoices WHERE id = $1').get(invoiceId);
+  if (!invoice || invoice.status === 'paid') return;
+  await db.prepare('UPDATE invoices SET status = $1, paid_at = $2, payment_method = $3, payment_order_id = $4 WHERE id = $5')
+    .run('paid', new Date().toISOString(), method, paymentRef, invoiceId);
+  if (invoice.service_id) {
+    await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3').run('active', new Date().toISOString(), invoice.service_id);
+    await db.prepare('UPDATE orders SET status = $1 WHERE service_id = $2').run('active', invoice.service_id);
+  }
+  await db.prepare('INSERT INTO notifications (id, user_id, title, message, type) VALUES ($1, $2, $3, $4, $5)')
+    .run(uuidv4(), invoice.user_id, 'Payment Received', `₹${invoice.amount} paid for ${invoice.invoice_no}`, 'success');
+}
+
+app.post('/api/payment/create-order', auth, async (req, res) => {
+  try {
+    const { invoice_id } = req.body;
+    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = $1 AND user_id = $2').get(invoice_id, req.user.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.status === 'paid') return res.json({ paid: true });
+
+    const keyId = await getRzKey();
+    const keySecret = await getRzSecret();
+
+    if (!keyId || !keySecret) return res.status(400).json({ error: 'Payment not configured' });
+
+    const rzRes = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': rzBasicAuth(keyId, keySecret),
+      },
+      body: JSON.stringify({
+        amount: Math.round(invoice.amount * 100),
+        currency: 'INR',
+        receipt: invoice.invoice_no,
+        notes: { invoice_id, user_id: req.user.id },
+      }),
+    });
+    const rzOrder = await rzRes.json();
+
+    await db.prepare('UPDATE invoices SET payment_order_id = $1 WHERE id = $2').run(rzOrder.id, invoice_id);
+
+    const user = await db.prepare('SELECT name, email, phone FROM users WHERE id = $1').get(req.user.id);
+    res.json({
+      key: keyId,
+      order_id: rzOrder.id,
+      amount: rzOrder.amount,
+      currency: rzOrder.currency,
+      receipt: rzOrder.receipt,
+      invoice_id,
+      name: user?.name || 'Customer',
+      email: user?.email || '',
+      contact: user?.phone || '',
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Payment creation failed' });
+  }
+});
+
+app.post('/api/payment/verify', auth, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, invoice_id } = req.body;
+    const keySecret = await getRzSecret();
+    const body = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSig = crypto.createHmac('sha256', keySecret).update(body).digest('hex');
+    if (expectedSig !== razorpay_signature) return res.status(400).json({ error: 'Invalid signature' });
+    await markInvoicePaid(invoice_id, razorpay_payment_id, 'Razorpay');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/payment/create-cf-order', auth, async (req, res) => {
+  try {
+    const { invoice_id } = req.body;
+    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = $1 AND user_id = $2').get(invoice_id, req.user.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.status === 'paid') return res.json({ paid: true });
+
+    const orderId = 'CF-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const clientId = await getCfClientId();
+    const clientSecret = await getCfClientSecret();
+    const testMode = await isCfTestMode();
+
+    if (clientId && clientSecret) {
+      const returnUrl = process.env.CF_RETURN_URL || 'https://royal-web-seven.vercel.app/devlopment/payment/callback';
+      const payload = {
+        order_id: orderId,
+        order_amount: invoice.amount,
+        order_currency: 'INR',
+        customer_details: {
+          customer_id: req.user.id,
+          customer_email: req.user.email || 'customer@royaldev.com',
+          customer_phone: '9999999999',
+        },
+        order_meta: { return_url: returnUrl + '?order_id={order_id}', notify_url: '' },
+      };
+      const baseUrl = testMode ? 'https://sandbox.cashfree.com/pg' : 'https://api.cashfree.com/pg';
+      const cfRes = await fetch(`${baseUrl}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-version': '2023-08-01',
+          'x-client-id': clientId,
+          'x-client-secret': clientSecret,
+        },
+        body: JSON.stringify(payload),
+      });
+      const cfData = await cfRes.json();
+      await db.prepare('UPDATE invoices SET payment_order_id = $1 WHERE id = $2').run(orderId, invoice_id);
+      res.json({
+        payment_link: cfData.payment_link,
+        payment_session_id: cfData.payment_session_id,
+        order_id: orderId,
+        amount: invoice.amount,
+      });
+    } else {
+      await db.prepare('UPDATE invoices SET payment_order_id = $1 WHERE id = $2').run(orderId, invoice_id);
+      res.json({ test_mode: true, order_id: orderId, amount: invoice.amount, message: 'Use /api/payment/confirm for test payment.' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/payment/confirm', auth, async (req, res) => {
+  try {
+    const { invoice_id } = req.body;
+    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = $1 AND user_id = $2').get(invoice_id, req.user.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    await markInvoicePaid(invoice_id, 'manual-' + Date.now(), 'Manual');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/payment/cf-webhook', async (req, res) => {
+  try {
+    const data = req.body?.data?.order || req.body;
+    const { order_id, order_status } = data;
+    if (order_status === 'PAID' || order_status === 'SUCCESS') {
+      const invoice = await db.prepare('SELECT * FROM invoices WHERE payment_order_id = $1').get(order_id);
+      if (invoice && invoice.status !== 'paid') {
+        await markInvoicePaid(invoice.id, order_id, 'Cashfree');
+      }
+    }
+    res.json({ status: 'ok' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// === Upload Routes ===
+import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
+const uploadsDir = '/tmp/uploads';
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.random().toString(36).slice(2) + path.extname(file.originalname)),
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const id = 'upload_' + uuidv4();
+  await db.prepare('INSERT INTO uploads (id, user_id, filename, original_name, mime_type, size) VALUES ($1, $2, $3, $4, $5, $6)').run(id, req.user.id, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size);
+  res.json({ id, url: `/api/uploads/file/${req.file.filename}`, original_name: req.file.originalname });
+});
+
+app.get('/api/uploads/:serviceId', auth, async (req, res) => {
+  const uploads = await db.prepare('SELECT id, original_name, mime_type, size, created_at, filename FROM uploads WHERE service_id = $1 AND (user_id = $2 OR $3 IN (SELECT id FROM users WHERE role = $4))').all(req.params.serviceId, req.user.id, req.user.id, 'admin');
+  res.json(uploads.map(u => ({ ...u, url: `/api/uploads/file/${u.filename}`, filename: undefined })));
+});
+
+app.get('/api/uploads/file/:filename', async (req, res) => {
+  const filePath = path.join(uploadsDir, req.params.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  res.sendFile(filePath);
+});
+
 export const handler = serverless(app);
 
 export default app;
