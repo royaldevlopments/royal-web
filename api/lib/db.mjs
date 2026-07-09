@@ -321,6 +321,65 @@ async function ensureSchema() {
       );
       console.log('Admin user seeded');
     }
+
+    const catCount = await client.query(`SELECT COUNT(*) as count FROM categories`);
+    if (parseInt(catCount.rows[0].count) === 0) {
+      const { v4: uuidv4 } = await import('uuid');
+      const cat1 = uuidv4(), cat2 = uuidv4(), cat3 = uuidv4(), cat4 = uuidv4();
+      await client.query(`INSERT INTO categories (id, name, description, icon, sort_order) VALUES ($1, $2, $3, $4, $5)`, [cat1, 'Game Servers', 'Premium game server hosting with DDoS protection', 'Gamepad2', 1]);
+      await client.query(`INSERT INTO categories (id, name, description, icon, sort_order) VALUES ($1, $2, $3, $4, $5)`, [cat2, 'VPS', 'High-performance virtual private servers', 'Server', 2]);
+      await client.query(`INSERT INTO categories (id, name, description, icon, sort_order) VALUES ($1, $2, $3, $4, $5)`, [cat3, 'Web Hosting', 'Reliable website hosting solutions', 'Globe', 3]);
+      await client.query(`INSERT INTO categories (id, name, description, icon, sort_order) VALUES ($1, $2, $3, $4, $5)`, [cat4, 'Discord Bot', '24/7 Discord bot hosting', 'Headphones', 4]);
+
+      const prods = [
+        [cat1, 'Lammu Plan', 'Entry-level game server with 4GB RAM', 49, 'monthly', '["4GB DDR4 RAM","2 vCPU Cores","50GB NVMe SSD","1Gbps Port","DDoS Protection","Free Subdomain"]'],
+        [cat1, 'Standard Plan', 'Balanced game server with 8GB RAM', 99, 'monthly', '["8GB DDR4 RAM","4 vCPU Cores","100GB NVMe SSD","1Gbps Port","DDoS Protection","Free Subdomain","Daily Backups"]'],
+        [cat1, 'Premium Plan', 'High-performance game server with 16GB RAM', 199, 'monthly', '["16GB DDR4 RAM","6 vCPU Cores","200GB NVMe SSD","1Gbps Port","DDoS Protection","Free Subdomain","Daily Backups","Priority Support"]'],
+        [cat1, 'Ultra Plan', 'Ultimate game server with 32GB RAM', 399, 'monthly', '["32GB DDR4 RAM","8 vCPU Cores","400GB NVMe SSD","1Gbps Port","DDoS Protection","Free Subdomain","Daily Backups","Priority Support","Dedicated IP"]'],
+        [cat2, 'Intel Platinum VPS', 'Intel Platinum VPS with 2GB RAM', 149, 'monthly', '["2GB DDR4 RAM","1 vCPU","40GB NVMe","1 IPv4","Root Access","DDoS Protection","KVM Virtualization"]'],
+        [cat2, 'AMD Ryzen VPS', 'High-performance AMD Ryzen VPS with 4GB', 299, 'monthly', '["4GB DDR4 RAM","2 vCPU","80GB NVMe","1 IPv4","Root Access","DDoS Protection","KVM Virtualization"]'],
+        [cat2, 'AMD EPYC VPS', 'Enterprise EPYC VPS with 8GB', 599, 'monthly', '["8GB DDR4 RAM","4 vCPU","160GB NVMe","1 IPv4","Root Access","DDoS Protection","KVM Virtualization"]'],
+        [cat3, 'Web Hosting Basic', 'cPanel hosting for 1 website', 79, 'monthly', '["1 Website","10GB Storage","100GB Bandwidth","Free SSL","cPanel","1 Email Account"]'],
+        [cat3, 'Web Hosting Pro', 'cPanel hosting for 5 websites', 199, 'monthly', '["5 Websites","50GB Storage","Unlimited Bandwidth","Free SSL","cPanel","5 Email Accounts","Daily Backups"]'],
+        [cat4, 'Discord Bot Basic', 'Basic Discord bot hosting', 49, 'monthly', '["512MB RAM","1 vCPU","5GB Storage","24/7 Uptime","Auto Restart","Free .xyz Domain"]'],
+        [cat4, 'Discord Bot Pro', 'Advanced Discord bot hosting', 99, 'monthly', '["2GB RAM","2 vCPU","10GB Storage","24/7 Uptime","Auto Restart","Free .xyz Domain","Database Included"]'],
+      ];
+      for (const [cid, name, desc, price, cycle, features] of prods) {
+        await client.query(`INSERT INTO products (id, category_id, name, description, price, billing_cycle, features) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [uuidv4(), cid, name, desc, price, cycle, features]);
+      }
+      console.log('Categories and products seeded');
+    }
+
+    const siteFeaturesExist = await client.query(`SELECT value FROM settings WHERE key = 'site_features'`);
+    if (siteFeaturesExist.rows.length === 0) {
+      const defaultFeatures = JSON.stringify({
+        sla_banner: { enabled: true, percentage: "99.9", title: "Uptime SLA", description: "Our uptime guarantee" },
+        discord: { enabled: true, server_id: "", invite_url: "https://discord.gg/R8U3wKxwkd" },
+        speed_benchmark: {
+          enabled: true, processors: [
+            { name: "Intel Platinum", score: 8246, color: "#3b82f6" },
+            { name: "Intel Xeon", score: 7210, color: "#6366f1" },
+            { name: "AMD Ryzen 9", score: 9572, color: "#a855f7" },
+            { name: "AMD EPYC", score: 11248, color: "#ec4899" }
+          ]
+        },
+        os_showcase: { enabled: true, os_list: ["Ubuntu", "Debian", "CentOS", "Windows Server", "AlmaLinux", "Rocky Linux"] },
+        partners: { enabled: true, partners: [] },
+        tech_stack: { enabled: true, technologies: ["AMD EPYC", "Intel Xeon", "NVMe SSD", "DDR4 ECC", "1Gbps Port", "DDoS Protection"] },
+        beyond_gaming: { enabled: true, items: [{ title: "VPS Hosting", description: "High-performance virtual servers", icon: "Server", link: "/vps/intel-platinum" }, { title: "Web Hosting", description: "cPanel hosting solutions", icon: "Globe", link: "/services/web-hosting" }, { title: "Discord Bot", description: "24/7 bot hosting", icon: "Headphones", link: "/services/discord-bot" }] },
+        chat: { enabled: true, widget: "whatsapp", number: "+919999999999", message: "Hello! I need help with hosting." },
+        support_status: { enabled: true, status: "online", response_time: "< 15 minutes" }
+      });
+      await client.query(`INSERT INTO settings (key, value) VALUES ($1, $2)`, ['site_features', defaultFeatures]);
+      console.log('Default site features seeded');
+    }
+
+    const announcementCount = await client.query(`SELECT COUNT(*) as count FROM announcements`);
+    if (parseInt(announcementCount.rows[0].count) === 0) {
+      const { v4: uuidv4 } = await import('uuid');
+      await client.query(`INSERT INTO announcements (id, title, content, status) VALUES ($1, $2, $3, $4)`, [uuidv4(), 'Welcome to Royal Devlopments', 'Experience premium hosting solutions with 99.9% uptime, 24/7 support, and blazing-fast NVMe SSD storage.', 'published']);
+      console.log('Default announcement seeded');
+    }
   } finally {
     client.release();
   }
