@@ -280,7 +280,7 @@ const Header = () => {
                 <Menu className="w-5 h-5 text-foreground" />
               </button>
             </SheetTrigger>
-            <SheetContent className="w-[85vw] sm:max-w-[420px] bg-background border-l border-border overflow-y-auto p-0">
+            <SheetContent className="w-[85vw] sm:max-w-[420px] bg-background border-l border-border overflow-y-auto p-0 z-[70]">
               <div className="p-5 border-b border-border flex items-center gap-3">
                 <img src="/logo/icon.png" alt="Royal" className="h-10 w-10 object-contain" />
                 <div>
