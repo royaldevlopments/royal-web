@@ -89,6 +89,8 @@ async function ensureSchema() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMPTZ`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,

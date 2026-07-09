@@ -14,12 +14,12 @@ const games = [
   { name: 'MINECRAFT', image: minecraftImg, link: '/games/minecraft' },
   { name: 'HYTALE', image: hytaleImg, link: '/games/hytale' },
   { name: 'PALWORLD', image: palworldImg, link: '/games/palworld' },
-  { name: 'ENSHROUDED', image: enshroudedImg, link: '#' },
-  { name: 'PROJECT ZOMBOID', image: projectZomboidImg, link: '#' },
-  { name: 'TERRARIA', image: terrariaImg, link: '#' },
-  { name: 'VALHEIM', image: valheimImg, link: '#' },
-  { name: 'ARK: SURVIVAL', image: arkSurvivalImg, link: '#' },
-  { name: 'ARMA 3', image: arma3Img, link: '#' },
+  { name: 'ENSHROUDED', image: enshroudedImg, link: '/games/enshrouded' },
+  { name: 'PROJECT ZOMBOID', image: projectZomboidImg, link: '/games/project-zomboid' },
+  { name: 'TERRARIA', image: terrariaImg, link: '/games/terraria' },
+  { name: 'VALHEIM', image: valheimImg, link: '/games/valheim' },
+  { name: 'ARK: SURVIVAL', image: arkSurvivalImg, link: '/games/ark-survival' },
+  { name: 'ARMA 3', image: arma3Img, link: '/games/arma-3' },
 ];
 
 const GameServers = () => {
@@ -56,9 +56,9 @@ const GameServers = () => {
 
         <ScrollReveal animation="fade-up" delay={200}>
           <div className="text-center mt-10">
-            <button className="btn-primary-gradient px-6 py-2.5 rounded-lg font-medium text-foreground text-sm">
+            <Link to="/games" className="inline-block btn-primary-gradient px-6 py-2.5 rounded-lg font-medium text-foreground text-sm">
               SEE ALL GAMES
-            </button>
+            </Link>
           </div>
         </ScrollReveal>
       </div>

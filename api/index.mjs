@@ -122,6 +122,17 @@ app.get('/api/auth/me', auth, async (req, res) => {
   res.json(user);
 });
 
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  const user = await db.prepare('SELECT id FROM users WHERE email = $1').get(email);
+  if (user) {
+    const token = crypto.randomBytes(32).toString('hex');
+    await db.prepare('UPDATE users SET reset_token = $1, reset_expires = NOW() + INTERVAL \'1 hour\' WHERE id = $2').run(token, user.id);
+  }
+  res.json({ success: true });
+});
+
 app.get('/api/categories', async (req, res) => {
   res.json(await db.prepare('SELECT * FROM categories ORDER BY sort_order').all());
 });

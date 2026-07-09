@@ -59,7 +59,7 @@ const menuItems = [
       { name: 'Contact Support', desc: 'Get in Touch with Our Team', link: '/contact' },
       { name: 'FAQ & Knowledge Base', desc: 'Answers to Common Questions', link: '/faq' },
       { name: 'Tutorials & Guides', desc: 'Step-by-Step Setup Guides', link: '/tutorials' },
-      { name: 'Server Status', desc: 'Check Our System Status', link: '#' },
+      { name: 'Server Status', desc: 'Check Our System Status', link: '/faq' },
     ]
   },
   {

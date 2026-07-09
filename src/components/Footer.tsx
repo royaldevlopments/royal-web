@@ -37,7 +37,7 @@ const Footer = () => {
             <ul className="space-y-2">
               <li><Link to="/about" className="footer-link text-sm">About Us</Link></li>
               <li><Link to="/faq" className="footer-link text-sm">FAQ</Link></li>
-              <li><a href="#" className="footer-link text-sm">Sitemap</a></li>
+              <li><Link to="/" className="footer-link text-sm">Sitemap</Link></li>
               <li><Link to="/privacy-policy" className="footer-link text-sm">Privacy Policy</Link></li>
               <li><Link to="/terms-of-service" className="footer-link text-sm">Terms of Service</Link></li>
               <li><Link to="/refund-policy" className="footer-link text-sm">Refund Policy</Link></li>
@@ -63,7 +63,7 @@ const Footer = () => {
             <h4 className="font-semibold text-foreground text-sm mb-4">CUSTOMERS</h4>
             <ul className="space-y-2">
               <li><a href={billingUrl('')} className="footer-link text-sm">My Account</a></li>
-              <li><a href="#" className="footer-link text-sm">Knowledgebase</a></li>
+              <li><Link to="/faq" className="footer-link text-sm">Knowledgebase</Link></li>
               <li><Link to="/contact" className="footer-link text-sm">Contact Us</Link></li>
               <li><Link to="/tutorials" className="footer-link text-sm">Tutorials</Link></li>
             </ul>
@@ -74,8 +74,8 @@ const Footer = () => {
             <h4 className="font-semibold text-foreground text-sm mb-4">SOCIAL</h4>
             <ul className="space-y-2">
               <li><a href="https://discord.gg/R8U3wKxwkd" target="_blank" rel="noopener noreferrer" className="footer-link text-sm">Discord</a></li>
-              <li><a href="#" className="footer-link text-sm">YouTube</a></li>
-              <li><a href="#" className="footer-link text-sm">LinkedIn</a></li>
+              <li><a href="https://youtube.com/@royaldevlopments" target="_blank" rel="noopener noreferrer" className="footer-link text-sm">YouTube</a></li>
+              <li><a href="https://linkedin.com/company/royaldevlopments" target="_blank" rel="noopener noreferrer" className="footer-link text-sm">LinkedIn</a></li>
             </ul>
           </div>
         </div>

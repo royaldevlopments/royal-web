@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import Order from './pages/Order';
 import Services from './pages/Services';
@@ -39,6 +40,7 @@ function App() {
         <Route element={<PublicLayout />}>
           <Route path="/login" element={<Public><Login /></Public>} />
           <Route path="/register" element={<Public><Register /></Public>} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
         </Route>
         <Route path="/" element={<Navigate to="/dashboard" />} />
         <Route element={<Protected><Layout /></Protected>}>
