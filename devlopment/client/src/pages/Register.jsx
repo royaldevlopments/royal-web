@@ -66,12 +66,12 @@ export default function Register() {
           {error && <div className="mb-5 p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">{error}</div>}
 
           <div className="flex gap-3 mb-6">
-            <a href="https://royal-web-seven.vercel.app/api/auth/google"
+            <a href="/devlopment/api/auth/google"
               className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-border transition-all duration-300 text-sm font-medium hover:border-[#1cc4e8]/30 hover:shadow-[0_0_20px_rgba(28,196,232,0.1)]"
               style={{ background: 'linear-gradient(180deg, hsl(230 20% 12%) 0%, hsl(230 20% 8%) 100%)' }}>
               <Globe className="w-4 h-4 text-[#1cc4e8]" /> Google
             </a>
-            <a href="https://royal-web-seven.vercel.app/api/auth/discord"
+            <a href="/devlopment/api/auth/discord"
               className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-border transition-all duration-300 text-sm font-medium hover:border-[#1cc4e8]/30 hover:shadow-[0_0_20px_rgba(28,196,232,0.1)]"
               style={{ background: 'linear-gradient(180deg, hsl(230 20% 12%) 0%, hsl(230 20% 8%) 100%)' }}>
               <MessageCircle className="w-4 h-4 text-[#1cc4e8]" /> Discord
