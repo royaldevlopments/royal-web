@@ -96,33 +96,35 @@ const DomainSearchPage = () => {
 
             {/* Search */}
             <ScrollReveal animation="fade-up" delay={100}>
-              <div className="max-w-2xl mx-auto">
-                <div className="flex items-center gap-3 p-2 rounded-xl border border-border bg-card/50 backdrop-blur-sm hover:border-[#1cc4e8]/30 transition-all"
-                  style={{ background: 'linear-gradient(180deg, hsl(230 20% 10%) 0%, hsl(230 20% 7%) 100%)' }}>
-                  <div className="flex-1 flex items-center gap-2 pl-4">
-                    <Search className="w-5 h-5 text-muted-foreground shrink-0" />
-                    <input value={domain} onChange={e => setDomain(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && searchDomain()}
-                      placeholder="Enter your domain name"
-                      className="w-full bg-transparent border-none outline-none text-foreground text-base placeholder:text-muted-foreground/50 py-3" />
+                <div className="max-w-2xl mx-auto">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-2 rounded-xl border border-border bg-card/50 backdrop-blur-sm hover:border-[#1cc4e8]/30 transition-all"
+                    style={{ background: 'linear-gradient(180deg, hsl(230 20% 10%) 0%, hsl(230 20% 7%) 100%)' }}>
+                    <div className="flex-1 flex items-center gap-2 pl-4">
+                      <Search className="w-5 h-5 text-muted-foreground shrink-0" />
+                      <input value={domain} onChange={e => setDomain(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && searchDomain()}
+                        placeholder="Enter your domain name"
+                        className="w-full bg-transparent border-none outline-none text-foreground text-base placeholder:text-muted-foreground/50 py-3" />
+                    </div>
+                    <div className="flex items-center gap-2 px-2 sm:px-0">
+                      <select value={tld} onChange={e => setTld(e.target.value)}
+                        className="bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer max-h-40 flex-1 sm:flex-none">
+                        {loadingTlds ? (
+                          <option>.com — Loading...</option>
+                        ) : tlds.length === 0 ? (
+                          <option value="">No TLD data — WHMCS not configured</option>
+                        ) : (
+                          tlds.map(t => <option key={t.tld} value={t.tld}>{t.tld} — ₹{t.price}</option>)
+                        )}
+                      </select>
+                      <button onClick={searchDomain} disabled={loading || !domain.trim()}
+                        className="px-6 py-2.5 text-sm font-semibold rounded-lg text-white transition-all hover:shadow-[0_0_25px_rgba(168,85,247,0.4)] disabled:opacity-50 whitespace-nowrap"
+                        style={{ background: 'linear-gradient(135deg, #a855f7, #9333ea)' }}>
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                      </button>
+                    </div>
                   </div>
-                  <select value={tld} onChange={e => setTld(e.target.value)}
-                    className="bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer max-h-40">
-                    {loadingTlds ? (
-                      <option>.com — Loading...</option>
-                    ) : tlds.length === 0 ? (
-                      <option value="">No TLD data — WHMCS not configured</option>
-                    ) : (
-                      tlds.map(t => <option key={t.tld} value={t.tld}>{t.tld} — ₹{t.price}</option>)
-                    )}
-                  </select>
-                  <button onClick={searchDomain} disabled={loading || !domain.trim()}
-                    className="px-6 py-2.5 text-sm font-semibold rounded-lg text-white transition-all hover:shadow-[0_0_25px_rgba(168,85,247,0.4)] disabled:opacity-50"
-                    style={{ background: 'linear-gradient(135deg, #a855f7, #9333ea)' }}>
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-                  </button>
                 </div>
-              </div>
             </ScrollReveal>
 
             {/* Results */}
