@@ -62,7 +62,7 @@ const Footer = () => {
           <div>
             <h4 className="font-semibold text-foreground text-sm mb-4">CUSTOMERS</h4>
             <ul className="space-y-2">
-              <li><a href={billingUrl('')} className="footer-link text-sm">My Account</a></li>
+              <li><a href={billingUrl('/login')} className="footer-link text-sm">My Account</a></li>
               <li><Link to="/faq" className="footer-link text-sm">Knowledgebase</Link></li>
               <li><Link to="/contact" className="footer-link text-sm">Contact Us</Link></li>
               <li><Link to="/tutorials" className="footer-link text-sm">Tutorials</Link></li>

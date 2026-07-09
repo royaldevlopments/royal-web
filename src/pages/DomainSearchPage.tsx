@@ -110,6 +110,8 @@ const DomainSearchPage = () => {
                     className="bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer max-h-40">
                     {loadingTlds ? (
                       <option>.com — Loading...</option>
+                    ) : tlds.length === 0 ? (
+                      <option value="">No TLD data — WHMCS not configured</option>
                     ) : (
                       tlds.map(t => <option key={t.tld} value={t.tld}>{t.tld} — ₹{t.price}</option>)
                     )}
@@ -136,7 +138,7 @@ const DomainSearchPage = () => {
                           <p className="text-xs text-green-500">Available — ₹{tldPrice?.price || 899}/yr</p>
                         </div>
                       </div>
-                      <a href={billingUrl('/cart')} target="_blank"
+                      <a href={billingUrl('/order')} target="_blank"
                         className="px-5 py-2 text-xs font-semibold rounded-lg text-white hover:shadow-[0_0_25px_rgba(34,197,94,0.4)] flex items-center gap-1.5 transition-all"
                         style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                         <ShoppingCart className="w-3 h-3" /> Add to Cart
@@ -192,6 +194,11 @@ const DomainSearchPage = () => {
                 {loadingTlds ? (
                   <div className="flex items-center justify-center py-20">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : tlds.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-yellow-500">⚠️ WHMCS domain pricing is not configured.</p>
+                    <p className="text-xs text-muted-foreground mt-2">Contact administrator to enable domain search.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">

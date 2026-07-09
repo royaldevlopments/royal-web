@@ -101,7 +101,7 @@ export default function ServiceDetail() {
                   <div key={cf.key} className="p-3 bg-secondary/50 rounded-lg">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{cf.label}</p>
                     {fileRecord ? (
-                      <a href={`/uploads/${fileRecord.filename}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline mt-0.5 flex items-center gap-1.5">
+                      <a href={`/devlopment/api/uploads/file/${fileRecord.filename}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline mt-0.5 flex items-center gap-1.5">
                         <Download className="w-3.5 h-3.5" /> {fileRecord.original_name}
                       </a>
                     ) : (
@@ -137,7 +137,7 @@ export default function ServiceDetail() {
                   return (
                     <div key={df.key} className="p-3 bg-secondary/50 rounded-lg">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{df.label}</p>
-                      <a href={`/uploads/${fileRecord.filename}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline mt-0.5 flex items-center gap-1.5">
+                      <a href={`/devlopment/api/uploads/file/${fileRecord.filename}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline mt-0.5 flex items-center gap-1.5">
                         <Download className="w-3.5 h-3.5" /> {fileRecord.original_name}
                       </a>
                     </div>

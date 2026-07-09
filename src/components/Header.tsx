@@ -231,6 +231,11 @@ const Header = () => {
                         <p className="font-medium group-hover:text-primary transition-colors">{item.name}</p>
                         {item.desc && <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>}
                       </button>
+                    ) : menu.title === 'Client Area' ? (
+                      <a key={item.name} href={item.link} className="block px-3 py-2.5 text-sm text-foreground hover:bg-secondary/50 rounded-lg transition-colors group">
+                        <p className="font-medium group-hover:text-primary transition-colors">{item.name}</p>
+                        {item.desc && <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>}
+                      </a>
                     ) : (
                       <Link key={item.name} to={item.link} className="block px-3 py-2.5 text-sm text-foreground hover:bg-secondary/50 rounded-lg transition-colors group">
                         <p className="font-medium group-hover:text-primary transition-colors">{item.name}</p>
@@ -258,12 +263,8 @@ const Header = () => {
               </div>
             ) : (
               <>
-                <a href={billingUrl('')}>
-                  <button className="px-4 py-2 text-sm font-medium rounded-lg btn-primary-gradient text-foreground">LOGIN</button>
-                </a>
-                <a href={billingUrl('/register')}>
-                  <button className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">REGISTER</button>
-                </a>
+                <a href={billingUrl('/login')} className="px-4 py-2 text-sm font-medium rounded-lg btn-primary-gradient text-foreground text-center">LOGIN</a>
+                <a href={billingUrl('/register')} className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors text-center">REGISTER</a>
               </>
             )}
           </div>
@@ -318,6 +319,16 @@ const Header = () => {
                             <div className="text-sm font-medium text-foreground group-hover:text-[#1cc4e8] transition-colors">{item.name}</div>
                             {item.desc && <div className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</div>}
                           </button>
+                        ) : menu.title === 'Client Area' ? (
+                          <a
+                            key={item.name}
+                            href={item.link || '#'}
+                            className="block p-3 rounded-lg hover:bg-[#1cc4e8]/5 transition-colors group border-l-2 border-transparent hover:border-[#1cc4e8] ml-4"
+                            onClick={() => setIsOpen(false)}
+                          >
+                            <div className="text-sm font-medium text-foreground group-hover:text-[#1cc4e8] transition-colors">{item.name}</div>
+                            {item.desc && <div className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</div>}
+                          </a>
                         ) : (
                           <Link
                             key={item.name}
@@ -371,7 +382,7 @@ const Header = () => {
                   </>
                 ) : (
                   <div className="flex gap-2">
-                    <a href={billingUrl('')} onClick={() => setIsOpen(false)}
+                    <a href={billingUrl('/login')} onClick={() => setIsOpen(false)}
                       className="flex-1 relative overflow-hidden flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.4)]"
                       style={{ background: 'linear-gradient(135deg, #a855f7, #9333ea)' }}>
                       LOGIN

@@ -634,19 +634,64 @@ app.get('/api/site-features', async (req, res) => {
   res.json(features);
 });
 
+async function whmcsGetConfig() {
+  const rows = await db.prepare("SELECT key, value FROM settings WHERE key IN ('whmcs_url','whmcs_identifier','whmcs_secret')").all();
+  const cfg = {};
+  for (const r of rows) cfg[r.key] = r.value;
+  return {
+    url: cfg.whmcs_url || process.env.WHMCS_URL || '',
+    identifier: cfg.whmcs_identifier || process.env.WHMCS_IDENTIFIER || '',
+    secret: cfg.whmcs_secret || process.env.WHMCS_SECRET || '',
+  };
+}
+
+async function whmcsApiCall(action, params = {}) {
+  const { url, identifier, secret } = await whmcsGetConfig();
+  if (!url || !identifier || !secret) return null;
+  const body = new URLSearchParams({ action, identifier, secret, responsetype: 'json', ...params });
+  try {
+    const r = await fetch(`${url}/includes/api.php`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    return await r.json();
+  } catch { return null; }
+}
+
 app.get('/api/whmcs/sso', auth, async (req, res) => {
+  const cfg = await whmcsGetConfig();
+  if (!cfg.url || !cfg.identifier || !cfg.secret) return res.json({ url: null, error: 'WHMCS is not configured. Contact administrator.' });
   const user = await db.prepare('SELECT whmcs_client_id FROM users WHERE id = $1').get(req.user.id);
-  if (!user?.whmcs_client_id) return res.json({ url: null, error: 'No WHMCS account linked' });
-  res.json({ url: null });
+  if (!user?.whmcs_client_id) return res.json({ url: null, error: 'No WHMCS account linked to your profile.' });
+  const sso = await whmcsApiCall('CreateSsoToken', { client_id: user.whmcs_client_id, redirect_url: '' });
+  if (sso?.result === 'success' && sso.redirect_url) return res.json({ url: sso.redirect_url });
+  res.json({ url: null, error: 'WHMCS SSO unavailable. Try again later.' });
 });
 
 app.get('/api/whmcs/domain-check', async (req, res) => {
   const { domain, tld } = req.query;
-  res.json({ result: 'success', status: 'available', message: `${domain}${tld} is available!` });
+  if (!domain || !tld) return res.json({ result: 'error', message: 'Missing domain or TLD' });
+  const cfg = await whmcsGetConfig();
+  if (!cfg.url || !cfg.identifier || !cfg.secret) return res.json({ result: 'error', message: 'WHMCS domain checker is not configured. Contact administrator.' });
+  const whois = await whmcsApiCall('DomainWHOIS', { domain, tld });
+  if (!whois) return res.json({ result: 'error', message: 'Failed to connect to WHMCS. Try again later.' });
+  if (whois.result === 'error') return res.json({ result: 'error', message: whois.message || 'WHMCS lookup failed.' });
+  const status = whois.status === 'available' ? 'available' : 'unavailable';
+  res.json({ result: 'success', status, message: whois.status === 'available' ? `${domain}${tld} is available!` : `${domain}${tld} is already registered` });
 });
 
 app.get('/api/whmcs/domain-suggestions', async (req, res) => {
-  res.json({ tlds: ['.com', '.net', '.org', '.in', '.co.in', '.tech', '.io', '.app', '.dev', '.me', '.xyz', '.online', '.store', '.site', '.cloud'].map(t => ({ tld: t, price: 899, renew: 999, register: true, transfer: true })), source: 'fallback' });
+  const cfg = await whmcsGetConfig();
+  if (!cfg.url || !cfg.identifier || !cfg.secret) return res.json({ tlds: [], error: 'WHMCS is not configured. Contact administrator.' });
+  const pricing = await whmcsApiCall('GetTLDPricing');
+  if (!pricing) return res.json({ tlds: [], error: 'Failed to connect to WHMCS for pricing.' });
+  if (pricing.result === 'error') return res.json({ tlds: [], error: pricing.message || 'Failed to fetch TLD pricing.' });
+  if (pricing.pricing) {
+    const tlds = Object.entries(pricing.pricing).map(([tld, p]) => ({
+      tld: `.${tld.replace(/^\./, '')}`, price: parseInt(p.register?.replace(/[^0-9]/g, '')) || 899,
+      renew: parseInt(p.renew?.replace(/[^0-9]/g, '')) || 999,
+      register: true, transfer: true
+    }));
+    return res.json({ tlds, source: 'whmcs' });
+  }
+  res.json({ tlds: [], error: 'No TLD pricing data available from WHMCS.' });
 });
 
 app.get('/api/health', (req, res) => {
