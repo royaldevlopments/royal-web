@@ -13,3 +13,4 @@ export function apiFetch(path: string, options?: RequestInit): Promise<Response>
   return fetch(apiUrl(path), options);
 }
 // force rebuild Thu Jul  9 00:26:38 UTC 2026
+export const BUILD = 1783556917;

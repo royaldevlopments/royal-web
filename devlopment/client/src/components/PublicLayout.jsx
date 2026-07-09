@@ -21,7 +21,7 @@ export default function PublicLayout() {
           </a>
           <nav className="flex items-center gap-4">
             <a href="/" className="text-sm text-muted-foreground hover:text-[#1cc4e8] transition-colors">Home</a>
-            <a href="/devlopment/register" className="relative overflow-hidden px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-300 text-white hover:shadow-[0_0_25px_rgba(168,85,247,0.4)] hover:-translate-y-0.5"
+            <a href="/register" className="relative overflow-hidden px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-300 text-white hover:shadow-[0_0_25px_rgba(168,85,247,0.4)] hover:-translate-y-0.5"
               style={{ background: 'linear-gradient(135deg, #a855f7, #9333ea)' }}>
               REGISTER
             </a>

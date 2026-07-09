@@ -11,7 +11,7 @@ export default function Referrals() {
 
   useEffect(() => { api('/referrals').then(setData).catch(() => {}); }, []);
 
-  const refLink = data ? `${window.location.origin}/devlopment/register?ref=${data.referral_code}` : '';
+  const refLink = data ? `${window.location.origin}/register?ref=${data.referral_code}` : '';
 
   const copyLink = () => {
     navigator.clipboard.writeText(refLink);

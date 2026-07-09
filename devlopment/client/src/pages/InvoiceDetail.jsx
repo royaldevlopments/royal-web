@@ -98,7 +98,7 @@ export default function InvoiceDetail() {
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold text-foreground">₹{invoice.amount}</p>
-              <a href={`/devlopment/api/invoices/${id}/pdf`} target="_blank" className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-2 justify-end">
+              <a href={`${import.meta.env.VITE_API_URL || '/devlopment/api'}/invoices/${id}/pdf`} target="_blank" className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-2 justify-end">
                 <FileDown className="w-3.5 h-3.5" /> Download PDF
               </a>
             </div>
