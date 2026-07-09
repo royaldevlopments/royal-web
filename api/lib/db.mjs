@@ -309,6 +309,18 @@ async function ensureSchema() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+
+    const adminExists = await client.query(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`);
+    if (adminExists.rows.length === 0) {
+      const bcrypt = (await import('bcryptjs')).default;
+      const { v4: uuidv4 } = await import('uuid');
+      const hashed = bcrypt.hashSync('admin123', 10);
+      await client.query(
+        `INSERT INTO users (id, email, password, name, role, balance) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [uuidv4(), 'admin@royaldev.com', hashed, 'Admin', 'admin', 99999]
+      );
+      console.log('Admin user seeded');
+    }
   } finally {
     client.release();
   }
