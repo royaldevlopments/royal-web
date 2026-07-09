@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 import Footer from './Footer';
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 1024);
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
