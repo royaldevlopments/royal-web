@@ -37,7 +37,7 @@ export default function Referrals() {
         <p className="text-sm text-muted-foreground mt-1">Refer friends and earn rewards</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card text-center">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3"><Users className="w-5 h-5 text-primary" /></div>
           <p className="text-2xl font-bold text-foreground">{data.stats.count}</p>

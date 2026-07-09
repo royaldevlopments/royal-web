@@ -5,14 +5,17 @@ import { Server } from 'lucide-react';
 
 export default function Services() {
   const [services, setServices] = useState([]);
+  const [err, setErr] = useState('');
 
-  useEffect(() => { api('/services').then(setServices).catch(() => {}); }, []);
+  useEffect(() => { api('/services').then(setServices).catch(e => setErr(e.message)); }, []);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-foreground">Services</h1>
 
-      {services.length === 0 ? (
+      {err && <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">{err}</div>}
+
+      {services.length === 0 && !err ? (
         <div className="card text-center py-12">
           <Server className="w-12 h-12 text-muted mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">No services yet.</p>

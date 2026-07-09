@@ -8,7 +8,7 @@ import serverless from 'serverless-http';
 import db, { ensureSchema } from './lib/db.mjs';
 
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || 'royal-billing-secret-2026';
+const JWT_SECRET = process.env.JWT_SECRET || (() => { console.warn('WARNING: Using default JWT_SECRET. Set JWT_SECRET env var in production.'); return 'royal-billing-secret-2026'; })();
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -19,11 +19,33 @@ app.use((req, res, next) => {
   next();
 });
 
+const rateLimitMap = new Map();
+function rateLimit(key, maxRequests = 5, windowMs = 60000) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now - entry.reset > windowMs) {
+    rateLimitMap.set(key, { count: 1, reset: now });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > maxRequests) return true;
+  return false;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now - entry.reset > 60000) rateLimitMap.delete(key);
+  }
+}, 30000);
+
 function mailTransport() {
   return null;
 }
 
 async function sendMail({ to, subject, html }) {
+  console.log(`[MAIL] To: ${to}, Subject: ${subject}`);
+  // Email sending disabled - configure SMTP in production
 }
 
 function logActivity(userId, adminId, action, details) {
@@ -85,6 +107,8 @@ function adminOnly(req, res, next) {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    if (rateLimit(`register:${ip}`, 3, 60000)) return res.status(429).json({ error: 'Too many attempts. Try again later.' });
     const { email, password, name, phone, turnstile_token, referral_code } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
     if (!(await verifyTurnstile(turnstile_token))) return res.status(400).json({ error: 'Captcha verification failed' });
@@ -107,6 +131,8 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    if (rateLimit(`login:${ip}`, 5, 60000)) return res.status(429).json({ error: 'Too many attempts. Try again later.' });
     const { email, password, turnstile_token } = req.body;
     if (!(await verifyTurnstile(turnstile_token))) return res.status(400).json({ error: 'Captcha verification failed' });
     const user = await db.prepare('SELECT * FROM users WHERE email = $1').get(email);
@@ -123,14 +149,32 @@ app.get('/api/auth/me', auth, async (req, res) => {
 });
 
 app.post('/api/auth/forgot-password', async (req, res) => {
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  if (rateLimit(`forgot:${ip}`, 2, 60000)) return res.status(429).json({ error: 'Too many attempts. Try again later.' });
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
   const user = await db.prepare('SELECT id FROM users WHERE email = $1').get(email);
   if (user) {
     const token = crypto.randomBytes(32).toString('hex');
     await db.prepare('UPDATE users SET reset_token = $1, reset_expires = NOW() + INTERVAL \'1 hour\' WHERE id = $2').run(token, user.id);
+    const siteUrl = (await db.prepare("SELECT value FROM settings WHERE key = 'site_url'").get())?.value || `${req.protocol}://${req.get('host')}`;
+    const resetLink = `${siteUrl}/devlopment/reset-password?token=${token}`;
+    await sendMail({ to: email, subject: 'Password Reset', html: `<p>Click to reset: <a href="${resetLink}">${resetLink}</a></p>` });
   }
   res.json({ success: true });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const user = await db.prepare("SELECT * FROM users WHERE reset_token = $1 AND reset_expires > NOW()").get(token);
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.prepare('UPDATE users SET password = $1, reset_token = NULL, reset_expires = NULL WHERE id = $2').run(hashed, user.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/categories', async (req, res) => {

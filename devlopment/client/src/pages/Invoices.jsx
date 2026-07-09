@@ -5,14 +5,17 @@ import { FileText } from 'lucide-react';
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState([]);
+  const [err, setErr] = useState('');
 
-  useEffect(() => { api('/invoices').then(setInvoices).catch(() => {}); }, []);
+  useEffect(() => { api('/invoices').then(setInvoices).catch(e => setErr(e.message)); }, []);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-foreground">Invoices</h1>
 
-      {invoices.length === 0 ? (
+      {err && <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">{err}</div>}
+
+      {invoices.length === 0 && !err ? (
         <div className="card text-center py-12">
           <FileText className="w-12 h-12 text-muted mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">No invoices found.</p>

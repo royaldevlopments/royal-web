@@ -122,7 +122,7 @@ export default function PaymentMethods() {
         <h3 className="text-base font-bold text-foreground flex items-center gap-2"><Plus className="w-4 h-4 text-primary" /> Add Money</h3>
         <p className="text-xs text-muted-foreground">Select amount to add to your wallet</p>
 
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {amounts.map(a => (
             <button key={a} onClick={() => { setAmount(a); setCustomAmount(''); }} className={`py-3 rounded-xl text-sm font-semibold border transition-all ${amount === a && !customAmount ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:border-primary/30'}`}>
               ₹{a}

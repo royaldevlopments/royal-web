@@ -118,7 +118,7 @@ export default function InvoiceDetail() {
       </div>
 
       {invoice.status === 'unpaid' && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Razorpay */}
           <div className="card">
             <div className="flex items-center gap-3 pb-3 border-b border-border mb-4">

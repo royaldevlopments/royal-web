@@ -21,14 +21,15 @@ export default function Order() {
   const [coupon, setCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
   const [applying, setApplying] = useState(false);
+  const [fetchErr, setFetchErr] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    api('/categories').then(cats => { setCategories(cats); if (cats.length) setActiveCat(cats[0].id); }).catch(() => {});
+    api('/categories').then(cats => { setCategories(cats); if (cats.length) setActiveCat(cats[0].id); setFetchErr(''); }).catch(e => setFetchErr(e.message));
   }, []);
 
   useEffect(() => {
-    if (activeCat) api(`/products?category=${activeCat}`).then(setProducts).catch(() => {});
+    if (activeCat) api(`/products?category=${activeCat}`).then(setProducts).catch(e => setFetchErr(e.message));
   }, [activeCat]);
 
   const selectProduct = async (p) => {
@@ -96,6 +97,8 @@ export default function Order() {
   if (step === 'browse') return (
     <div className="max-w-6xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-foreground">Order Services</h1>
+
+      {fetchErr && <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">{fetchErr}</div>}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {categories.map(cat => {
           const CatIcon = catIcons[cat.name] || Package;
