@@ -12,6 +12,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'royal-billing-secret-2026';
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+app.use((req, res, next) => {
+  if (req.path.startsWith('/devlopment/api')) {
+    req.url = req.url.replace('/devlopment/api', '/api');
+  }
+  next();
+});
 
 function mailTransport() {
   return null;
