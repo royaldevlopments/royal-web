@@ -214,7 +214,7 @@ const Header = () => {
               )}
             </div>
           ))}
-          {menuItems.filter(m => m.title === 'Client Area').map((menu) => (
+          {loggedIn && menuItems.filter(m => m.title === 'Client Area').map((menu) => (
             <div key={menu.title} className="relative" style={{ borderLeft: '1px solid hsl(var(--primary) / 0.4)', paddingLeft: '12px', marginLeft: '4px' }}
               onMouseEnter={() => setDropdownOpen(menu.title)}
               onMouseLeave={() => setDropdownOpen(null)}
@@ -291,7 +291,9 @@ const Header = () => {
                 </div>
               </div>
               <nav className="p-3 space-y-1">
-                {menuItems.map((menu, idx) => (
+                {menuItems.map((menu, idx) => {
+                  if (menu.title === 'Client Area' && !loggedIn) return null;
+                  return (
                   <Fragment key={menu.title}>
                     {menu.title === 'Client Area' && <div className="border-t border-border my-2" />}
                     <Collapsible
@@ -363,7 +365,8 @@ const Header = () => {
                     </CollapsibleContent>
                     </Collapsible>
                   </Fragment>
-                ))}
+                  );
+                })}
               </nav>
 
               <div className="border-t border-border p-4 space-y-2">
