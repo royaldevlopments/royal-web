@@ -380,6 +380,20 @@ async function ensureSchema() {
       await client.query(`INSERT INTO announcements (id, title, content, status) VALUES ($1, $2, $3, $4)`, [uuidv4(), 'Welcome to Royal Devlopments', 'Experience premium hosting solutions with 99.9% uptime, 24/7 support, and blazing-fast NVMe SSD storage.', 'published']);
       console.log('Default announcement seeded');
     }
+
+    const templateCount = await client.query(`SELECT COUNT(*) as count FROM email_templates`);
+    if (parseInt(templateCount.rows[0].count) === 0) {
+      const { v4: uuidv4 } = await import('uuid');
+      const templates = [
+        [uuidv4(), 'welcome', 'Welcome to {{site_name}}', '<h2>Welcome {{name}}!</h2><p>Your account has been created successfully.</p><p>Email: {{email}}</p><p>Login at: <a href="{{site_url}}/devlopment">{{site_url}}/devlopment</a></p>'],
+        [uuidv4(), 'order_confirmed', 'Order Confirmed - {{site_name}}', '<h2>Order Confirmed!</h2><p>Your order for <strong>{{product_name}}</strong> has been placed.</p><p>Invoice: {{invoice_no}}<br>Amount: {{amount}}<br>Due: {{due_date}}</p>'],
+        [uuidv4(), 'payment_received', 'Payment Received - {{site_name}}', '<h2>Payment Received!</h2><p>Your payment of <strong>{{amount}}</strong> for {{invoice_no}} has been received successfully.</p>'],
+      ];
+      for (const [id, key, subject, body] of templates) {
+        await client.query(`INSERT INTO email_templates (id, key, subject, body) VALUES ($1, $2, $3, $4)`, [id, key, subject, body]);
+      }
+      console.log('Default email templates seeded');
+    }
   } finally {
     client.release();
   }
