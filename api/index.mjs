@@ -423,6 +423,20 @@ app.get('/api/admin/invoices', auth, adminOnly, async (req, res) => {
   res.json(await db.prepare('SELECT i.*, u.name as user_name FROM invoices i LEFT JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC').all());
 });
 
+app.post('/api/admin/invoices/:id/status', auth, adminOnly, async (req, res) => {
+  const { status } = req.body;
+  if (!['paid', 'unpaid', 'cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  await db.prepare('UPDATE invoices SET status = $1, updated_at = $2 WHERE id = $3').run(status, new Date().toISOString(), req.params.id);
+  if (status === 'paid') {
+    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = $1').get(req.params.id);
+    if (invoice?.service_id) {
+      await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3').run('active', new Date().toISOString(), invoice.service_id);
+      await db.prepare('UPDATE orders SET status = $1 WHERE service_id = $2').run('active', invoice.service_id);
+    }
+  }
+  res.json({ success: true });
+});
+
 app.get('/api/admin/tickets', auth, adminOnly, async (req, res) => {
   res.json(await db.prepare('SELECT t.*, u.name as user_name FROM tickets t LEFT JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC').all());
 });

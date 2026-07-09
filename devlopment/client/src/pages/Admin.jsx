@@ -314,14 +314,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === 'invoices' && (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">Invoice</th><th className="text-left p-3">User</th><th className="text-right p-3">Amount</th><th className="text-left p-3">Status</th><th className="text-right p-3">Date</th></tr></thead>
-            <tbody>{invoices.map(inv => <tr key={inv.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{inv.invoice_no}</td><td className="p-3 text-muted-foreground">{inv.user_name}</td><td className="p-3 text-right text-foreground">₹{inv.amount}</td><td className="p-3"><span className={`badge ${inv.status === 'paid' ? 'badge-paid' : 'badge-unpaid'}`}>{inv.status}</span></td><td className="p-3 text-right text-muted-foreground">{new Date(inv.created_at).toLocaleDateString()}</td></tr>)}</tbody>
-          </table>
-        </div>
-      )}
+      {tab === 'invoices' && <AdminInvoicesTab api={api} invoices={invoices} setInvoices={setInvoices} />}
 
       {tab === 'tickets' && <AdminTicketsTab api={api} tickets={tickets} setTickets={setTickets} />}
 
@@ -870,6 +863,48 @@ function SiteFeaturesEditor({ api }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ====== Invoices Tab ======
+function AdminInvoicesTab({ api, invoices, setInvoices }) {
+  const updateStatus = async (id, status) => {
+    try {
+      await api(`/admin/invoices/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+      api('/admin/invoices').then(setInvoices);
+    } catch (e) { alert(e.message); }
+  };
+
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">Invoice</th><th className="text-left p-3">User</th><th className="text-right p-3">Amount</th><th className="text-left p-3">Status</th><th className="text-right p-3">Date</th><th className="text-right p-3">Actions</th></tr></thead>
+        <tbody>{invoices.map(inv => (
+          <tr key={inv.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
+            <td className="p-3 text-foreground">{inv.invoice_no}</td>
+            <td className="p-3 text-muted-foreground">{inv.user_name}</td>
+            <td className="p-3 text-right text-foreground">₹{inv.amount}</td>
+            <td className="p-3">
+              <select value={inv.status} onChange={e => updateStatus(inv.id, e.target.value)}
+                className="text-xs bg-secondary border border-border rounded-lg p-1 text-foreground">
+                <option value="unpaid">Unpaid</option>
+                <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </td>
+            <td className="p-3 text-right text-muted-foreground">{new Date(inv.created_at).toLocaleDateString()}</td>
+            <td className="p-3 text-right">
+              {inv.status === 'unpaid' && (
+                <button onClick={() => updateStatus(inv.id, 'paid')}
+                  className="text-xs bg-success/10 text-success hover:bg-success/20 px-2 py-1 rounded-lg transition-colors">
+                  Mark Paid
+                </button>
+              )}
+            </td>
+          </tr>
+        ))}</tbody>
+      </table>
     </div>
   );
 }
