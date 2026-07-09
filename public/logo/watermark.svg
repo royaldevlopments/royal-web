@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" fill="none">
+  <g opacity="0.15">
+    <polygon points="55,10 95,10 115,60 95,110 55,110 35,60" fill="#000"/>
+    <path d="M-20,15 L-25,-10 L-10,0 L0,-15 L10,0 L25,-10 L20,15 Z" fill="black" transform="translate(75, 60)"/>
+    <text x="135" y="52" font-family="'Segoe UI', Arial, sans-serif" font-size="32" font-weight="800" fill="black" letter-spacing="1">ROYAL</text>
+    <text x="135" y="82" font-family="'Segoe UI', Arial, sans-serif" font-size="32" font-weight="800" fill="black" letter-spacing="1">DEVLOPMENTS</text>
+  </g>
+</svg>

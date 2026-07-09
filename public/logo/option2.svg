@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 130" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0948b3"/>
+      <stop offset="100%" stop-color="#7100b9"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#0948b3"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Stylized R mark -->
+  <g transform="translate(60, 65)">
+    <rect x="-30" y="-35" width="60" height="70" rx="12" fill="url(#g1)"/>
+    <text x="0" y="10" font-family="Inter, 'Segoe UI', sans-serif" font-size="42" font-weight="700" fill="white" text-anchor="middle">R</text>
+    <!-- Tech dot -->
+    <circle cx="15" cy="-18" r="3" fill="#00d4ff"/>
+    <line x1="15" y1="-18" x2="28" y2="-18" stroke="#00d4ff" stroke-width="1.5" opacity="0.6"/>
+    <line x1="15" y1="-18" x2="15" y2="-28" stroke="#00d4ff" stroke-width="1.5" opacity="0.6"/>
+  </g>
+
+  <!-- Name -->
+  <text x="120" y="53" font-family="Inter, 'Segoe UI', sans-serif" font-size="34" font-weight="700" fill="#0948b3" letter-spacing="1">ROYAL</text>
+  <text x="120" y="88" font-family="Inter, 'Segoe UI', sans-serif" font-size="34" font-weight="700" fill="url(#g1)" letter-spacing="1">DEVLOPMENTS</text>
+
+  <rect x="120" y="102" width="40" height="3" rx="1.5" fill="#00d4ff"/>
+  <text x="168" y="105" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#999" letter-spacing="2">TECH SOLUTIONS</text>
+</svg>

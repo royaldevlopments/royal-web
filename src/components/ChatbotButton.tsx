@@ -1,8 +1,16 @@
 import { MessageCircle, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/api';
 
 const ChatbotButton = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    apiFetch('/site-features').then(r => r.json()).then(d => setEnabled(d.live_chat?.enabled !== false)).catch(() => setEnabled(true));
+  }, []);
+
+  if (!enabled) return null;
 
   return (
     <>

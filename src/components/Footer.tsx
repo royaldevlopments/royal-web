@@ -1,8 +1,34 @@
+import { useState, useEffect } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { apiFetch, billingUrl } from '@/lib/api';
 
 const Footer = () => {
+  const [sla, setSla] = useState<{ enabled: boolean; percentage: string; title: string; description: string } | null>(null);
+
+  useEffect(() => {
+    apiFetch('/site-features').then(r => r.json()).then(d => setSla(d.sla_banner)).catch(() => {});
+  }, []);
+
   return (
-    <footer className="border-t border-border py-12 px-4">
+    <footer className="border-t border-border pt-10 pb-10 px-4">
+      {/* SLA Bar */}
+      {sla?.enabled && (
+        <div className="container mx-auto mb-8">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <span className="font-bold gradient-text-cyan text-sm">{sla.percentage || '99.9'}%</span>
+              <span className="hidden sm:inline">{sla.title || 'Uptime SLA'}</span>
+            </div>
+            <span className="w-1 h-1 rounded-full bg-border hidden sm:block" />
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> 24/7 Monitoring</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Auto Failover</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Compensation</span>
+          </div>
+        </div>
+      )}
+
       <div className="container mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           {/* Company */}
@@ -26,6 +52,7 @@ const Footer = () => {
               <li><Link to="/games/minecraft" className="footer-link text-sm">Minecraft</Link></li>
               <li><Link to="/vps/intel-platinum" className="footer-link text-sm">VPS Servers</Link></li>
               <li><Link to="/services/web-hosting" className="footer-link text-sm">Web Hosting</Link></li>
+              <li><Link to="/services/domains" className="footer-link text-sm">Domain Search</Link></li>
               <li><Link to="/services/discord-bot" className="footer-link text-sm">Discord Bot</Link></li>
               <li><Link to="/services/rdp" className="footer-link text-sm">RDP Plans</Link></li>
             </ul>
@@ -35,7 +62,7 @@ const Footer = () => {
           <div>
             <h4 className="font-semibold text-foreground text-sm mb-4">CUSTOMERS</h4>
             <ul className="space-y-2">
-              <li><a href="#" className="footer-link text-sm">My Account</a></li>
+              <li><a href={billingUrl('')} className="footer-link text-sm">My Account</a></li>
               <li><a href="#" className="footer-link text-sm">Knowledgebase</a></li>
               <li><Link to="/contact" className="footer-link text-sm">Contact Us</Link></li>
               <li><Link to="/tutorials" className="footer-link text-sm">Tutorials</Link></li>
@@ -53,11 +80,17 @@ const Footer = () => {
           </div>
         </div>
 
-        {/* Trustpilot */}
-        <div className="text-center mb-8">
-          <a href="#" className="text-muted-foreground text-sm hover:text-primary transition-colors">
-            Trustpilot Reviews
-          </a>
+        {/* Footer Logo - same as header */}
+        <div className="flex flex-col items-center mb-10">
+          <Link to="/" className="flex items-center gap-3">
+            <img src="/logo/icon.png" alt="Royal" className="h-14 w-14 object-contain" />
+            <span className="text-left">
+              <span className="text-xl font-bold block">
+                <span className="text-blue-500">ROYAL</span> <span className="text-foreground">DEVLOPMENTS</span>
+              </span>
+              <span className="text-[10px] text-blue-400/70 tracking-[3px] font-medium">BUILDING SOLUTIONS POWER FUTURE</span>
+            </span>
+          </Link>
         </div>
 
         {/* Divider */}
@@ -80,7 +113,7 @@ const Footer = () => {
 
           {/* Copyright */}
           <p className="text-center text-muted-foreground text-xs">
-            Copyright 2025 © CodeNest Solution. All rights reserved.
+            Copyright 2026 © Royal Devlopments. All rights reserved.
           </p>
         </div>
       </div>

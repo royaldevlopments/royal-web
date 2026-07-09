@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0948b3"/>
+      <stop offset="100%" stop-color="#7100b9"/>
+    </linearGradient>
+  </defs>
+  <!-- Dot + line tech mark -->
+  <g transform="translate(50, 60)">
+    <circle cx="0" cy="0" r="6" fill="#0948b3"/>
+    <line x1="6" y1="0" x2="35" y2="0" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="38" cy="0" r="3" fill="#7100b9"/>
+    <line x1="38" y1="-3" x2="38" y2="-20" stroke="#7100b9" stroke-width="2"/>
+    <circle cx="38" cy="-22" r="2" fill="#00d4ff"/>
+  </g>
+  <text x="100" y="52" font-family="Inter, 'Segoe UI', sans-serif" font-size="28" font-weight="600" fill="#0948b3" letter-spacing="3">ROYAL</text>
+  <text x="100" y="82" font-family="Inter, 'Segoe UI', sans-serif" font-size="28" font-weight="600" fill="#7100b9" letter-spacing="3">DEVLOPMENTS</text>
+</svg>

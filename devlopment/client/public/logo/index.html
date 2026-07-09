@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Royal Devlopments - Logo System</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Inter, 'Segoe UI', sans-serif; padding: 50px; background: #f8f8f8; }
+  h1 { text-align: center; font-size: 12px; color: #999; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 6px; }
+  p { text-align: center; font-size: 12px; color: #bbb; margin-bottom: 40px; }
+  .section { max-width: 700px; margin: 0 auto 50px; }
+  .section h2 { font-size: 11px; color: #ccc; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 15px; padding-left: 10px; }
+  .grid { display: flex; gap: 20px; flex-wrap: wrap; }
+  .card { flex: 1; min-width: 300px; border-radius: 16px; padding: 40px; background: white; border: 1px solid #eee; }
+  .card.dark { background: #1a1a1a; border-color: #333; }
+  .card img { max-width: 100%; display: block; }
+  .card .tag { font-size: 10px; color: #aaa; margin-top: 15px; letter-spacing: 1px; }
+  .card.dark .tag { color: #666; }
+  .badge { display: inline-block; background: #0948b3; color: white; font-size: 8px; padding: 2px 8px; border-radius: 10px; letter-spacing: 1px; margin-right: 6px; }
+</style>
+</head>
+<body>
+  <h1>Royal Devlopments</h1>
+  <p>Complete Logo System — Primary / Secondary / Icon</p>
+
+  <div class="section">
+    <h2><span class="badge">LIGHT BG</span> Color Versions</h2>
+    <div class="grid">
+      <div class="card"><img src="primary.svg"><div class="tag">Primary (Full)</div></div>
+      <div class="card"><img src="secondary.svg"><div class="tag">Secondary (Text Only)</div></div>
+      <div class="card" style="flex:0.3;min-width:auto;text-align:center"><img src="icon.svg" style="max-width:80px;margin:0 auto"><div class="tag">Icon</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2><span class="badge" style="background:#666">DARK BG</span> White Versions</h2>
+    <div class="grid">
+      <div class="card dark"><img src="primary-dark.svg"><div class="tag">Primary (White)</div></div>
+      <div class="card dark"><img src="secondary-dark.svg"><div class="tag">Secondary (White)</div></div>
+      <div class="card dark" style="flex:0.3;min-width:auto;text-align:center"><img src="icon-dark.svg" style="max-width:80px;margin:0 auto"><div class="tag">Icon</div></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -32,6 +32,7 @@ import SatisfactoryPlans from "./pages/SatisfactoryPlans";
 import Arma3Plans from "./pages/Arma3Plans";
 import EmailHosting from "./pages/EmailHosting";
 import CloudStoragePlans from "./pages/CloudStoragePlans";
+import DomainSearchPage from "./pages/DomainSearchPage";
 import Downloads from "./pages/Downloads";
 import NotFound from "./pages/NotFound";
 import ChatbotButton from "./components/ChatbotButton";
@@ -62,6 +63,7 @@ const App = () => (
           <Route path="/services/web-hosting" element={<WebHosting />} />
           <Route path="/services/rdp" element={<RDPPlans />} />
           <Route path="/services/email-hosting" element={<EmailHosting />} />
+          <Route path="/services/domains" element={<DomainSearchPage />} />
           <Route path="/services/cloud-storage" element={<CloudStoragePlans />} />
           <Route path="/faq" element={<FAQPage />} />
           <Route path="/games" element={<AllGames />} />
