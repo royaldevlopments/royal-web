@@ -1,5 +1,6 @@
 {
   "framework": "vite",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "dist",
   "functions": {
     "api/index.mjs": {
@@ -10,7 +11,6 @@
   "rewrites": [
     { "source": "/devlopment/api/(.*)", "destination": "/api/$1" },
     { "source": "/api/(.*)", "destination": "/api/index.mjs" },
-    { "source": "/devlopment/assets/(.*)", "destination": "/devlopment/assets/$1" },
     { "source": "/devlopment/(.*)", "destination": "/devlopment/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
