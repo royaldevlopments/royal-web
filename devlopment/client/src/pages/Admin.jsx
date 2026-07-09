@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Users, Server, FileText, Ticket, DollarSign, TrendingUp, Package, Plus, X, Settings as SettingsIcon, Eye, EyeOff, CheckCircle, Layers, Trash2, Edit3, Upload, TicketCheck, Percent, History, Ban, Mail, Shield, Globe, Layout } from 'lucide-react';
+import { Users, Server, FileText, Ticket, DollarSign, TrendingUp, Package, Plus, X, Settings as SettingsIcon, Eye, EyeOff, CheckCircle, Layers, Trash2, Edit3, Upload, TicketCheck, Percent, History, Ban, Mail, Shield, Globe, Layout, ArrowLeft, Send, Paperclip } from 'lucide-react';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -323,14 +323,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === 'tickets' && (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">User</th><th className="text-left p-3">Subject</th><th className="text-left p-3">Status</th><th className="text-left p-3">Priority</th><th className="text-right p-3">Date</th></tr></thead>
-            <tbody>{tickets.map(t => <tr key={t.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{t.user_name}</td><td className="p-3 text-muted-foreground">{t.subject}</td><td className="p-3"><span className={`badge ${t.status === 'open' ? 'badge-open' : 'badge-closed'}`}>{t.status}</span></td><td className="p-3"><span className="badge badge-open capitalize">{t.priority}</span></td><td className="p-3 text-right text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td></tr>)}</tbody>
-          </table>
-        </div>
-      )}
+      {tab === 'tickets' && <AdminTicketsTab api={api} tickets={tickets} setTickets={setTickets} />}
 
       {tab === 'coupons' && <CouponsTab api={api} />}
       {tab === 'cancellations' && <CancellationsTab api={api} />}
@@ -877,6 +870,109 @@ function SiteFeaturesEditor({ api }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ====== Tickets Tab ======
+function AdminTicketsTab({ api, tickets, setTickets }) {
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketDetail, setTicketDetail] = useState(null);
+  const [reply, setReply] = useState('');
+
+  const openTicket = async (t) => {
+    setSelectedTicket(t);
+    try {
+      const detail = await api(`/tickets/${t.id}`);
+      setTicketDetail(detail);
+    } catch (e) { alert(e.message); }
+  };
+
+  const backToList = () => {
+    setSelectedTicket(null);
+    setTicketDetail(null);
+    setReply('');
+  };
+
+  const sendReply = async () => {
+    if (!reply.trim()) return;
+    try {
+      await api(`/tickets/${selectedTicket.id}/reply`, { method: 'POST', body: JSON.stringify({ message: reply }) });
+      setReply('');
+      const detail = await api(`/tickets/${selectedTicket.id}`);
+      setTicketDetail(detail);
+      api('/admin/tickets').then(setTickets);
+    } catch (e) { alert(e.message); }
+  };
+
+  const closeTicket = async () => {
+    try {
+      await api(`/tickets/${selectedTicket.id}/close`, { method: 'POST' });
+      const detail = await api(`/tickets/${selectedTicket.id}`);
+      setTicketDetail(detail);
+      api('/admin/tickets').then(setTickets);
+    } catch (e) { alert(e.message); }
+  };
+
+  if (selectedTicket && ticketDetail) {
+    return (
+      <div className="space-y-4">
+        <button onClick={backToList} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Tickets
+        </button>
+        <div className="card space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Ticket #{ticketDetail.id?.slice(0, 6)} — {ticketDetail.subject}</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {ticketDetail.user_name || 'Unknown'} · {new Date(ticketDetail.created_at).toLocaleDateString()} · <span className="capitalize">{ticketDetail.priority} priority</span> · <span className={`badge ${ticketDetail.status === 'open' || ticketDetail.status === 'awaiting_reply' ? 'badge-open' : 'badge-closed'}`}>{ticketDetail.status}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 my-4">
+            {ticketDetail.replies?.map(r => (
+              <div key={r.id} className={`flex gap-3 ${r.is_staff ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${r.is_staff ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                  {r.user_name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>
+                <div className={`flex-1 ${r.is_staff ? 'text-right' : ''}`}>
+                  <p className="text-xs text-muted-foreground">{r.is_staff ? 'Staff' : r.user_name || 'User'} · {new Date(r.created_at).toLocaleDateString()} {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className={`text-sm mt-1 p-3 rounded-lg inline-block ${r.is_staff ? 'bg-primary/10 text-foreground' : 'bg-secondary text-foreground'}`}>{r.message}</p>
+                  {r.attachment && <p className="text-xs text-primary mt-1 flex items-center gap-1"><Paperclip className="w-3 h-3" /> {r.attachment}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {ticketDetail.status !== 'closed' && (
+            <div className="space-y-3 pt-4 border-t border-border">
+              <textarea value={reply} onChange={e => setReply(e.target.value)} className="input-field min-h-[80px]" placeholder="Type your reply as staff..." />
+              <div className="flex gap-2">
+                <button onClick={sendReply} className="btn-primary text-sm flex items-center gap-1.5"><Send className="w-3.5 h-3.5" /> Reply</button>
+                <button onClick={closeTicket} className="btn-secondary text-sm">Close Ticket</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">User</th><th className="text-left p-3">Subject</th><th className="text-left p-3">Status</th><th className="text-left p-3">Priority</th><th className="text-right p-3">Date</th></tr></thead>
+        <tbody>{tickets.map(t => (
+          <tr key={t.id} onClick={() => openTicket(t)} className="border-b border-border last:border-0 hover:bg-secondary/30 cursor-pointer">
+            <td className="p-3 text-foreground">{t.user_name}</td>
+            <td className="p-3 text-muted-foreground">{t.subject}</td>
+            <td className="p-3"><span className={`badge ${t.status === 'open' || t.status === 'awaiting_reply' ? 'badge-open' : 'badge-closed'}`}>{t.status}</span></td>
+            <td className="p-3"><span className="badge badge-open capitalize">{t.priority}</span></td>
+            <td className="p-3 text-right text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td>
+          </tr>
+        ))}</tbody>
+      </table>
     </div>
   );
 }

@@ -294,20 +294,30 @@ app.post('/api/tickets', auth, async (req, res) => {
 });
 
 app.get('/api/tickets/:id', auth, async (req, res) => {
-  const ticket = await db.prepare('SELECT * FROM tickets WHERE id = $1 AND user_id = $2').get(req.params.id, req.user.id);
+  let ticket;
+  if (req.user.role === 'admin') {
+    ticket = await db.prepare('SELECT * FROM tickets WHERE id = $1').get(req.params.id);
+  } else {
+    ticket = await db.prepare('SELECT * FROM tickets WHERE id = $1 AND user_id = $2').get(req.params.id, req.user.id);
+  }
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
   const replies = await db.prepare('SELECT tr.*, u.name as user_name FROM ticket_replies tr LEFT JOIN users u ON tr.user_id = u.id WHERE tr.ticket_id = $1 ORDER BY tr.created_at').all(req.params.id);
   res.json({ ...ticket, replies });
 });
 
 app.post('/api/tickets/:id/reply', auth, async (req, res) => {
-  await db.prepare('INSERT INTO ticket_replies (id, ticket_id, user_id, message) VALUES ($1, $2, $3, $4)').run(uuidv4(), req.params.id, req.user.id, req.body.message);
+  const isStaff = req.user.role === 'admin' ? 1 : 0;
+  await db.prepare('INSERT INTO ticket_replies (id, ticket_id, user_id, message, is_staff) VALUES ($1, $2, $3, $4, $5)').run(uuidv4(), req.params.id, req.user.id, req.body.message, isStaff);
   await db.prepare('UPDATE tickets SET status = $1, updated_at = $2 WHERE id = $3').run('awaiting_reply', new Date().toISOString(), req.params.id);
   res.json({ success: true });
 });
 
 app.post('/api/tickets/:id/close', auth, async (req, res) => {
-  await db.prepare('UPDATE tickets SET status = $1, updated_at = $2 WHERE id = $3 AND user_id = $4').run('closed', new Date().toISOString(), req.params.id, req.user.id);
+  if (req.user.role === 'admin') {
+    await db.prepare('UPDATE tickets SET status = $1, updated_at = $2 WHERE id = $3').run('closed', new Date().toISOString(), req.params.id);
+  } else {
+    await db.prepare('UPDATE tickets SET status = $1, updated_at = $2 WHERE id = $3 AND user_id = $4').run('closed', new Date().toISOString(), req.params.id, req.user.id);
+  }
   res.json({ success: true });
 });
 
