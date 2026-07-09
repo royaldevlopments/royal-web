@@ -21,7 +21,7 @@ export default function InvoiceDetail() {
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
 
-  useEffect(() => { api(`/invoices/${id}`).then(setInvoice).catch(() => {}); }, [id]);
+  useEffect(() => { api(`/invoices/${id}`).then(setInvoice).catch(() => window.location.href = '/invoices'); }, [id]);
 
   const payRazorpay = async () => {
     setPaying(true);

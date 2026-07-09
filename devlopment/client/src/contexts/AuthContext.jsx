@@ -31,7 +31,13 @@ export function AuthProvider({ children }) {
 
   const logout = () => { localStorage.removeItem('token'); setUser(null); };
 
-  return <AuthContext.Provider value={{ user, loading, login, register, logout }}>{children}</AuthContext.Provider>;
+  const refreshUser = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try { const u = await api('/auth/me'); setUser(u); } catch { localStorage.removeItem('token'); setUser(null); }
+  };
+
+  return <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

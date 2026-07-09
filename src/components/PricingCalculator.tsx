@@ -39,7 +39,7 @@ const PricingCalculator = () => {
       <div className="container mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {plans.map((plan, i) => {
-            const features: string[] = plan.features ? JSON.parse(plan.features.replace(/'/g, '"')) : [];
+            const features: string[] = (() => { try { return plan.features ? JSON.parse(plan.features.replace(/'/g, '"')) : []; } catch { return []; } })();
             const isSelected = plan.id === selected;
             return (
               <ScrollReveal key={plan.id} animation="fade-up" delay={i * 100}>

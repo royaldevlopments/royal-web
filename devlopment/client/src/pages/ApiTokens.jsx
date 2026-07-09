@@ -16,7 +16,7 @@ export default function ApiTokens() {
   const create = async () => {
     if (!newName.trim()) return;
     try {
-      const res = await api('/tokens', { method: 'POST', body: { name: newName.trim() } });
+      const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) });
       setCreated(res);
       setNewName('');
       setCopied(false);

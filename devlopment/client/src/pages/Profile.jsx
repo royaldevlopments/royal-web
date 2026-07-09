@@ -7,7 +7,7 @@ export default function Profile() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api('/auth/me').then(u => setForm({ name: u.name || '', email: u.email || '', phone: u.phone || '', address: u.address || '', city: u.city || '', state: u.state || '' })).catch(() => {});
+    api('/auth/me').then(u => setForm({ name: u.name || '', email: u.email || '', phone: u.phone || '', address: u.address || '', city: u.city || '', state: u.state || '' })).catch(() => window.location.href = '/login');
   }, []);
 
   const update = (k, v) => setForm(p => ({ ...p, [k]: v }));

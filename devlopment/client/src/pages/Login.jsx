@@ -14,7 +14,7 @@ export default function Login() {
   const [turnstileKey, setTurnstileKey] = useState('');
   const turnstileRef = useRef(null);
   const turnstileId = useRef(null);
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -22,7 +22,8 @@ export default function Login() {
     const token = searchParams.get('token');
     if (token) {
       localStorage.setItem('token', token);
-      navigate('/dashboard', { replace: true });
+      refreshUser().then(() => navigate('/dashboard', { replace: true }));
+      return;
     }
     const err = searchParams.get('error');
     if (err) setError(decodeURIComponent(err));

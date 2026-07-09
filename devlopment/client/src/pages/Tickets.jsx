@@ -5,11 +5,13 @@ import { Ticket, Plus } from 'lucide-react';
 
 export default function Tickets() {
   const [tickets, setTickets] = useState([]);
+  const [services, setServices] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ subject: '', department: 'Support', priority: 'low', service_id: '', message: '' });
   const navigate = useNavigate();
 
   useEffect(() => { api('/tickets').then(setTickets).catch(() => {}); }, []);
+  useEffect(() => { api('/services').then(setServices).catch(() => {}); }, []);
 
   const createTicket = async (e) => {
     e.preventDefault();
@@ -58,6 +60,7 @@ export default function Tickets() {
             <label className="text-xs text-muted-foreground mb-1 block">Service</label>
             <select value={form.service_id} onChange={e => setForm(p => ({ ...p, service_id: e.target.value }))} className="input-field">
               <option value="">Select Service (optional)</option>
+              {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>

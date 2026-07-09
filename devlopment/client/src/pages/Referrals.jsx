@@ -9,9 +9,9 @@ export default function Referrals() {
   const [copied, setCopied] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState('');
 
-  useEffect(() => { api('/referrals').then(setData).catch(() => {}); }, []);
+  useEffect(() => { api('/referrals').then(setData).catch(() => setData({ stats: { count: 0, earnings: 0, balance: 0 }, list: [], referral_code: '' })); }, []);
 
-  const refLink = data ? `${window.location.origin}/devlopment/register?ref=${data.referral_code}` : '';
+  const refLink = data?.referral_code ? `${window.location.origin}/devlopment/register?ref=${data.referral_code}` : '';
 
   const copyLink = () => {
     navigator.clipboard.writeText(refLink);

@@ -8,7 +8,7 @@ export default function ServiceDetail() {
   const [service, setService] = useState(null);
   const [copied, setCopied] = useState(null);
 
-  useEffect(() => { api(`/services/${id}`).then(setService).catch(() => {}); }, [id]);
+  useEffect(() => { api(`/services/${id}`).then(setService).catch(() => window.location.href = '/services'); }, [id]);
 
   const copy = (text, key) => { navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 2000); };
 
@@ -81,8 +81,9 @@ export default function ServiceDetail() {
 
       {/* Custom Data */}
       {service.custom_data && service.product_custom_fields && (() => {
-        const cfs = JSON.parse(service.product_custom_fields || '[]');
-        const cd = typeof service.custom_data === 'string' ? JSON.parse(service.custom_data) : service.custom_data;
+        let cfs = [], cd = {};
+        try { cfs = JSON.parse(service.product_custom_fields || '[]'); } catch {}
+        try { cd = typeof service.custom_data === 'string' ? JSON.parse(service.custom_data) : (service.custom_data || {}); } catch {}
         const uploads = service.uploads || [];
         if (cfs.length === 0) return null;
         return (
@@ -117,8 +118,9 @@ export default function ServiceDetail() {
 
       {/* Delivery Info */}
       {service.delivery && service.product_delivery_fields && (() => {
-        const d = typeof service.delivery === 'string' ? JSON.parse(service.delivery) : service.delivery;
-        const dfs = JSON.parse(service.product_delivery_fields || '[]');
+        let d = {}, dfs = [];
+        try { d = typeof service.delivery === 'string' ? JSON.parse(service.delivery) : (service.delivery || {}); } catch {}
+        try { dfs = JSON.parse(service.product_delivery_fields || '[]'); } catch {}
         const uploads = service.uploads || [];
         if (dfs.length === 0) return null;
         return (

@@ -8,7 +8,7 @@ export default function Dashboard() {
   const [whmcsUrl, setWhmcsUrl] = useState(null);
   const [loadingSso, setLoadingSso] = useState(false);
 
-  useEffect(() => { api('/dashboard').then(setData).catch(() => {}); }, []);
+  useEffect(() => { api('/dashboard').then(setData).catch(() => setData({ stats: {}, recentServices: [], recentInvoices: [], recentTickets: [] })); }, []);
 
   const goToWhmcs = async () => {
     setLoadingSso(true);
@@ -22,11 +22,12 @@ export default function Dashboard() {
 
   if (!data) return <div className="flex items-center justify-center h-64"><div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" /></div>;
 
+  const s = data.stats || {};
   const cards = [
-    { icon: Server, label: 'Active Services', count: data.stats.activeServices, color: 'text-primary', bg: 'bg-primary/10', link: '/services' },
-    { icon: FileText, label: 'Unpaid Invoices', count: data.stats.unpaidInvoices, color: 'text-danger', bg: 'bg-danger/10', link: '/invoices' },
-    { icon: Ticket, label: 'Open Tickets', count: data.stats.openTickets, color: 'text-warning', bg: 'bg-warning/10', link: '/tickets' },
-    { icon: ShoppingCart, label: 'Total Orders', count: data.stats.totalOrders, color: 'text-success', bg: 'bg-success/10', link: '/services' },
+    { icon: Server, label: 'Active Services', count: s.activeServices ?? 0, color: 'text-primary', bg: 'bg-primary/10', link: '/services' },
+    { icon: FileText, label: 'Unpaid Invoices', count: s.unpaidInvoices ?? 0, color: 'text-danger', bg: 'bg-danger/10', link: '/invoices' },
+    { icon: Ticket, label: 'Open Tickets', count: s.openTickets ?? 0, color: 'text-warning', bg: 'bg-warning/10', link: '/tickets' },
+    { icon: ShoppingCart, label: 'Total Orders', count: s.totalOrders ?? 0, color: 'text-success', bg: 'bg-success/10', link: '/services' },
   ];
 
   return (
@@ -68,7 +69,7 @@ export default function Dashboard() {
             <h3 className="text-sm font-semibold text-foreground">Active Services</h3>
             <Link to="/services" className="text-xs text-primary hover:underline">View all</Link>
           </div>
-          {data.recentServices.length === 0 ? (
+          {(data.recentServices || []).length === 0 ? (
             <div className="text-center py-8">
               <Server className="w-8 h-8 text-muted mx-auto mb-2" />
               <p className="text-xs text-muted-foreground">No active services yet.</p>
@@ -90,7 +91,7 @@ export default function Dashboard() {
             <h3 className="text-sm font-semibold text-foreground">Recent Invoices</h3>
             <Link to="/invoices" className="text-xs text-primary hover:underline">View all</Link>
           </div>
-          {data.recentInvoices.length === 0 ? (
+          {(data.recentInvoices || []).length === 0 ? (
             <div className="text-center py-8">
               <FileText className="w-8 h-8 text-muted mx-auto mb-2" />
               <p className="text-xs text-muted-foreground">No invoices yet.</p>
@@ -115,7 +116,7 @@ export default function Dashboard() {
             <h3 className="text-sm font-semibold text-foreground">Support Tickets</h3>
             <Link to="/tickets" className="text-xs text-primary hover:underline">New ticket</Link>
           </div>
-          {data.recentTickets.length === 0 ? (
+          {(data.recentTickets || []).length === 0 ? (
             <div className="text-center py-8">
               <Ticket className="w-8 h-8 text-muted mx-auto mb-2" />
               <p className="text-xs text-muted-foreground">No tickets yet.</p>

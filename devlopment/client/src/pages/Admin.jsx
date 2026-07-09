@@ -442,8 +442,9 @@ export default function Admin() {
             <table className="w-full text-sm">
               <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">Name</th><th className="text-left p-3">Category</th><th className="text-right p-3">Price</th><th className="text-left p-3">Cycle</th><th className="text-left p-3">Order Fields</th><th className="text-left p-3">Deliver Fields</th><th className="text-right p-3">Actions</th></tr></thead>
               <tbody>{adminProducts.map(p => {
-                const cfs = JSON.parse(p.custom_fields || '[]');
-                const dfs = JSON.parse(p.delivery_fields || '[]');
+                let cfs = [], dfs = [];
+                try { cfs = JSON.parse(p.custom_fields || '[]'); } catch {}
+                try { dfs = JSON.parse(p.delivery_fields || '[]'); } catch {}
                 return (
                   <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
                     <td className="p-3 text-foreground font-medium">{p.name}</td>
