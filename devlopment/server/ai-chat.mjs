@@ -277,7 +277,49 @@ Higher-tier plans include additional RAM, storage, and priority support.`
 3. Check if the game version matches
 4. Try restarting the server from the control panel
 
-If the issue persists, please open a support ticket with your server ID and a description of the problem, and our team will investigate immediately.`
+    If the issue persists, please open a support ticket with your server ID and a description of the problem, and our team will investigate immediately.`
+  },
+  {
+    id: 'founder',
+    keywords: ['owner', 'founder', 'ceo', 'creator', 'who created', 'who owns', 'who made', 'who started', 'who founded', 'behind', 'shaurya', 'vashishtha', 'shourya', 'surya'],
+    context: ['company'],
+    priority: 10,
+    response: `Royal Devlopments was founded by **Shaurya Vashishtha**. 🚀 He built this company to provide premium, affordable game server and VPS hosting solutions. Shaurya is passionate about gaming and technology, and personally ensures that every customer gets the best possible experience.`
+  },
+  {
+    id: 'company-intro',
+    keywords: ['royal devlopments', 'royal', 'devlopments', 'company', 'about', 'tell me about', 'what is', 'who are you', 'about us', 'your company', 'yourself'],
+    context: ['company'],
+    priority: 8,
+    response: `**Royal Devlopments** is a premium hosting company founded by **Shaurya Vashishtha**. We specialize in:
+
+• 🎮 Game Server Hosting (Minecraft, Palworld, Valheim, ARK, and more)
+• 🖥️ High-Performance VPS
+• 🌐 Web Hosting
+• 🤖 Discord Bot Hosting
+
+We're known for our powerful Ryzen servers, DDoS protection, 99.9% uptime, and 24/7 AI support. Our mission is to make high-quality hosting accessible and affordable for everyone in India and beyond.`
+  },
+  {
+    id: 'company-location',
+    keywords: ['where', 'located', 'based', 'office', 'headquarters', 'head quarter', 'address', 'city', 'country', 'india'],
+    context: ['company'],
+    priority: 6,
+    response: `Royal Devlopments is based in **India** 🇮🇳. We have data centers in Mumbai and Delhi NCR for Indian customers, with additional locations in the US, Europe, and Singapore for global coverage.`
+  },
+  {
+    id: 'company-mission',
+    keywords: ['mission', 'vision', 'goal', 'purpose', 'values', 'why', 'aim'],
+    context: ['company'],
+    priority: 7,
+    response: `Our mission at Royal Devlopments is simple: **provide premium hosting that everyone can afford**. Founded by Shaurya Vashishtha, we believe gamers and developers deserve fast, reliable servers without breaking the bank. We're building India's best hosting platform — one server at a time.`
+  },
+  {
+    id: 'team',
+    keywords: ['team', 'employees', 'staff', 'people', 'workers', 'who works'],
+    context: ['company'],
+    priority: 6,
+    response: `Royal Devlopments is a growing team passionate about gaming and technology. Founded by **Shaurya Vashishtha**, our team includes server engineers, support specialists, and gaming enthusiasts — all working to give you the best hosting experience. We're always looking for talented people to join us!`
   }
 ];
 
