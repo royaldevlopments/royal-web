@@ -1215,6 +1215,32 @@ app.post('/api/chat/reply', auth, adminOnly, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// === AI Chat Routes ===
+const { getAIResponse } = require('./ai-chat.mjs');
+const chatContexts = new Map();
+
+app.post('/api/chat/ai', (req, res) => {
+  try {
+    const { message, session_id } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Message required' });
+    const sid = session_id || req.ip || 'default';
+    if (!chatContexts.has(sid)) chatContexts.set(sid, { history: [], updated: Date.now() });
+    const ctx = chatContexts.get(sid);
+    ctx.updated = Date.now();
+    const reply = getAIResponse(message, ctx.history);
+    ctx.history.push({ role: 'user', text: message });
+    ctx.history.push({ role: 'assistant', text: reply });
+    if (ctx.history.length > 20) ctx.history.splice(0, ctx.history.length - 20);
+    res.json({ reply, session_id: sid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/ai/clear', (req, res) => {
+  const { session_id } = req.body;
+  if (session_id && chatContexts.has(session_id)) chatContexts.delete(session_id);
+  res.json({ success: true });
+});
+
 // ====== SPA catch-all for admin panel at /devlopment/=====
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {

@@ -1421,80 +1421,48 @@ app.post('/api/payment/cf-webhook', async (req, res) => {
   }
 });
 
-// === Chat Routes ===
+// === AI Chat Routes ===
 
-app.get('/api/chat/messages', async (req, res) => {
+import { getAIResponse } from './lib/ai-chat.mjs';
+
+const chatContexts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of chatContexts) {
+    if (now - entry.updated > 1800000) chatContexts.delete(key);
+  }
+}, 300000);
+
+app.post('/api/chat/ai', async (req, res) => {
   try {
-    const { user_id } = req.query;
-    if (user_id) {
-      const token = req.headers.authorization?.split(' ')[1];
-      if (!token) return res.status(401).json({ error: 'No token' });
-      try {
-        const user = jwt.verify(token, JWT_SECRET);
-        if (user.role !== 'admin') {
-          const messages = await db.prepare('SELECT * FROM chat_messages WHERE (user_id = $1 OR email = (SELECT email FROM users WHERE id = $1)) ORDER BY created_at ASC').all(user_id);
-          return res.json(messages);
-        }
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
+    const { message, session_id } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Message required' });
+
+    const sid = session_id || req.ip || 'default';
+    if (!chatContexts.has(sid)) {
+      chatContexts.set(sid, { history: [], updated: Date.now() });
     }
-    const messages = await db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at ASC LIMIT 50").all();
-    res.json(messages);
+    const ctx = chatContexts.get(sid);
+    ctx.updated = Date.now();
+
+    const reply = getAIResponse(message, ctx.history);
+    ctx.history.push({ role: 'user', text: message });
+    ctx.history.push({ role: 'assistant', text: reply });
+    if (ctx.history.length > 20) {
+      ctx.history.splice(0, ctx.history.length - 20);
+    }
+
+    res.json({ reply, session_id: sid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/chat/messages', async (req, res) => {
-  try {
-    const { name, email, message } = req.body;
-    if (!name || !message) return res.status(400).json({ error: 'Name and message required' });
-    const id = uuidv4();
-    let userId = null;
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      try {
-        const user = jwt.verify(token, JWT_SECRET);
-        userId = user.id;
-      } catch {}
-    }
-    await db.prepare('INSERT INTO chat_messages (id, user_id, name, email, message) VALUES ($1, $2, $3, $4, $5)').run(id, userId, name, email || null, message);
-    const created = await db.prepare('SELECT * FROM chat_messages WHERE id = $1').get(id);
-    res.json(created);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/chat/messages/admin', auth, adminOnly, async (req, res) => {
-  try {
-    const { user_id, email } = req.query;
-    if (user_id) {
-      const messages = await db.prepare('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at ASC').all(user_id);
-      return res.json(messages);
-    }
-    if (email) {
-      const messages = await db.prepare('SELECT * FROM chat_messages WHERE email = $1 ORDER BY created_at ASC').all(email);
-      return res.json(messages);
-    }
-    const messages = await db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at ASC LIMIT 50").all();
-    res.json(messages);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/chat/read/:id', auth, adminOnly, async (req, res) => {
-  try {
-    await db.prepare('UPDATE chat_messages SET is_read = 1 WHERE id = $1').run(req.params.id);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/chat/reply', auth, adminOnly, async (req, res) => {
-  try {
-    const { user_email, message } = req.body;
-    if (!user_email || !message) return res.status(400).json({ error: 'user_email and message required' });
-    const id = uuidv4();
-    await db.prepare('INSERT INTO chat_messages (id, name, email, message, is_admin) VALUES ($1, $2, $3, $4, $5)').run(id, 'Support', user_email, message, 1);
-    const created = await db.prepare('SELECT * FROM chat_messages WHERE id = $1').get(id);
-    res.json(created);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+app.post('/api/chat/ai/clear', async (req, res) => {
+  const { session_id } = req.body;
+  if (session_id && chatContexts.has(session_id)) {
+    chatContexts.delete(session_id);
+  }
+  res.json({ success: true });
 });
 
 // === Upload Routes ===

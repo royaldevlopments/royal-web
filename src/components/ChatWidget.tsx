@@ -1,137 +1,158 @@
-import { MessageCircle, X, Send, Loader2 } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { MessageCircle, X, Send, Bot, User, Trash2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
+
+const SESSION_KEY = 'ai_chat_session';
+
+function getSessionId() {
+  let sid = sessionStorage.getItem(SESSION_KEY);
+  if (!sid) {
+    sid = 'sid_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem(SESSION_KEY, sid);
+  }
+  return sid;
+}
+
+const welcomeMessage = {
+  role: 'assistant',
+  text: `Hello! 👋 Welcome to **Royal Devlopments**! I'm your AI assistant. I can help you with:
+
+• Hosting plans and pricing (Minecraft, Palworld, VPS, etc.)
+• Account and billing support
+• Server setup and configuration
+• Technical troubleshooting
+
+What can I help you with today?`,
+};
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([welcomeMessage]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [messageText, setMessageText] = useState('');
   const messagesEndRef = useRef(null);
-  const pollRef = useRef(null);
 
-  const fetchMessages = useCallback(async () => {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text }]);
+    setLoading(true);
+
     try {
-      setLoading(true);
-      setError('');
-      const headers = {};
-      const res = await apiFetch('/chat/messages', { headers });
-      if (!res.ok) throw new Error('Failed to fetch');
+      const res = await apiFetch('/chat/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, session_id: getSessionId() }),
+      });
+      if (!res.ok) throw new Error('Failed to get response');
       const data = await res.json();
-      setMessages(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setError(e.message || 'Failed to fetch');
+      setMessages(prev => [...prev, { role: 'assistant', text: data.reply }]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Sorry, I encountered an error. Please try again or contact support@royaldevlopments.com' }]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchMessages();
-      pollRef.current = setInterval(fetchMessages, 5000);
-    } else {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [isOpen, fetchMessages]);
-
-  useEffect(() => {
-    if (!isOpen && messages.length > 0) {
-      setUnreadCount(messages.filter(m => !m.is_read && !m.is_admin).length);
-    } else {
-      setUnreadCount(0);
-    }
-  }, [messages, isOpen]);
-
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  async function sendMessage() {
-    if (!messageText.trim()) return;
-    setSending(true);
-    setError('');
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      const res = await apiFetch('/chat/messages', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ name: name.trim() || 'Guest', email: email.trim() || null, message: messageText.trim() }),
-      });
-      if (!res.ok) throw new Error('Failed to send');
-      const created = await res.json();
-      setMessages(prev => [...prev, created]);
-      setMessageText('');
-    } catch (e) {
-      setError(e.message || 'Failed to send');
-    } finally { setSending(false); }
+  function clearChat() {
+    apiFetch('/chat/ai/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: getSessionId() }),
+    }).catch(() => {});
+    setMessages([welcomeMessage]);
   }
 
   return (
     <>
       {isOpen && (
-        <div className="fixed bottom-24 right-4 z-50" style={{ width: '320px' }}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ height: '450px' }}>
-            <div className="p-4 flex items-center justify-between shrink-0" style={{ background: '#1cc4e8' }}>
-              <div>
-                <h3 className="font-semibold text-white text-sm">Live Chat</h3>
-                <p className="text-xs text-white/80">We're here to help</p>
+        <div className="fixed bottom-24 right-4 z-50" style={{ width: '340px' }}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ height: '480px' }}>
+            <div className="p-4 flex items-center justify-between shrink-0" style={{ background: 'linear-gradient(135deg, #1cc4e8, #0ea5e9)' }}>
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-white" />
+                <div>
+                  <h3 className="font-semibold text-white text-sm">AI Assistant</h3>
+                  <p className="text-[10px] text-white/70">Powered by Royal Devlopments</p>
+                </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-full hover:bg-white/20">
-                <X className="w-5 h-5 text-white" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={clearChat} className="p-1.5 rounded-full hover:bg-white/20" title="Clear chat">
+                  <Trash2 className="w-4 h-4 text-white/80" />
+                </button>
+                <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-full hover:bg-white/20">
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
             </div>
+
             <div className="flex-1 overflow-y-auto p-3 space-y-3" style={{ background: '#0a0b1e' }}>
-              {loading && messages.length === 0 && <div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 text-gray-500 animate-spin" /></div>}
-              {error && messages.length === 0 && <div className="flex items-center justify-center h-full"><p className="text-sm text-red-400">{error}</p></div>}
-              {messages.length === 0 && !loading && !error && (
-                <div className="flex items-center justify-center h-full"><p className="text-sm text-gray-500">Start a conversation!</p></div>
-              )}
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex flex-col ${msg.is_admin ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${msg.is_admin ? 'rounded-tr-none' : 'rounded-tl-none'}`}
-                    style={{ background: msg.is_admin ? '#1cc4e8' : '#1a1c2e', color: msg.is_admin ? '#fff' : '#e2e8f0' }}>
-                    <p className="text-xs font-medium opacity-80">{msg.is_admin ? 'Support' : msg.name}</p>
-                    <p className="text-sm mt-0.5 whitespace-pre-wrap break-words">{msg.message}</p>
-                    <p className="text-[10px] opacity-60 text-right mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${msg.role === 'user' ? 'bg-[#1cc4e8]/20' : 'bg-gradient-to-br from-[#1cc4e8] to-[#0ea5e9]'}`}>
+                    {msg.role === 'user' ? <User className="w-3.5 h-3.5 text-[#1cc4e8]" /> : <Bot className="w-3.5 h-3.5 text-white" />}
+                  </div>
+                  <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${msg.role === 'user' ? 'bg-[#1cc4e8] text-white rounded-tr-none' : 'bg-[#1a1c2e] text-[#e2e8f0] rounded-tl-none border border-gray-800/50'}`}>
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</div>
                   </div>
                 </div>
               ))}
+
+              {loading && (
+                <div className="flex gap-2">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-[#1cc4e8] to-[#0ea5e9]">
+                    <Bot className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="bg-[#1a1c2e] border border-gray-800/50 rounded-2xl rounded-tl-none px-4 py-3">
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 bg-[#1cc4e8] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-[#1cc4e8] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-[#1cc4e8] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
+
             <div className="p-3 border-t border-gray-800 shrink-0" style={{ background: '#111322' }}>
               <div className="flex gap-2">
-                <input type="text" placeholder="Your name" value={name} onChange={e => setName(e.target.value)}
-                  className="w-full mb-2 px-3 py-1.5 text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1cc4e8]"
-                  style={{ background: '#0a0b1e', color: '#e2e8f0' }} />
-              </div>
-              <div className="flex gap-2">
-                <input type="text" placeholder="Type your message..." value={messageText} onChange={e => setMessageText(e.target.value)}
+                <input
+                  type="text"
+                  placeholder="Ask me anything..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1cc4e8]"
-                  style={{ background: '#0a0b1e', color: '#e2e8f0' }} />
-                <button onClick={sendMessage} disabled={sending || !messageText.trim()}
-                  className="px-3 py-1.5 rounded-lg disabled:opacity-50 flex items-center justify-center" style={{ background: '#1cc4e8', color: '#fff' }}>
-                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  className="flex-1 px-3.5 py-2 text-sm rounded-xl border border-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1cc4e8] bg-[#0a0b1e] text-gray-200 placeholder-gray-500"
+                  style={{ background: '#0a0b1e' }}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={loading || !input.trim()}
+                  className="px-3.5 py-2 rounded-xl disabled:opacity-40 flex items-center justify-center transition-all hover:brightness-110"
+                  style={{ background: '#1cc4e8', color: '#fff' }}
+                >
+                  <Send className="w-4 h-4" />
                 </button>
               </div>
+              <p className="text-[10px] text-gray-600 mt-1.5 text-center">AI assistant may not be accurate. Contact support for critical issues.</p>
             </div>
           </div>
         </div>
       )}
-      <button onClick={() => setIsOpen(!isOpen)}
+
+      <button
+        onClick={() => setIsOpen(!isOpen)}
         className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-all"
-        style={{ background: '#1cc4e8', boxShadow: '0 0 20px rgba(28, 196, 232, 0.5)' }}>
+        style={{ background: 'linear-gradient(135deg, #1cc4e8, #0ea5e9)', boxShadow: '0 4px 20px rgba(28, 196, 232, 0.4)' }}
+      >
         {isOpen ? <X className="w-6 h-6 text-white" /> : <MessageCircle className="w-6 h-6 text-white" />}
-        {!isOpen && unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
       </button>
     </>
   );
