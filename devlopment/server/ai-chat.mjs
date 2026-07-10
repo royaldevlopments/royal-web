@@ -268,7 +268,7 @@ Higher-tier plans include additional RAM, storage, and priority support.`
   },
   {
     id: 'technical-issue',
-    keywords: ['error', 'issue', 'problem', 'bug', 'crash', 'down', 'offline', 'not working', 'broken', 'connection refused', 'timeout', 'cannot connect'],
+    keywords: ['error', 'issue', 'problem', 'bug', 'crash', 'down', 'offline', 'not working', 'broken', 'connection refused', 'timeout', 'cannot connect', 'lag', 'lagging', 'slow', 'stuck', 'frozen', 'freeze', 'disconnect'],
     context: ['support'],
     priority: 9,
     response: `I'm sorry you're experiencing issues! Let me help:
