@@ -192,6 +192,15 @@ What can I help you with today?`
     response: `You're welcome! 😊 Is there anything else I can help you with? Feel free to ask about any of our hosting services, pricing, or technical questions.`
   },
   {
+    id: 'ticket',
+    keywords: ['ticket', 'support ticket', 'create ticket', 'open ticket', 'submit ticket', 'raise ticket', 'new ticket', 'complaint', 'report', 'issue ticket'],
+    context: ['support'],
+    priority: 9,
+    response: `You can create a support ticket here: https://royal-web-seven.vercel.app/devlopment/tickets
+
+Our support team usually responds within 1-2 hours during business hours (IST). Please include your server ID and a detailed description so we can help you faster!`
+  },
+  {
     id: 'goodbye',
     keywords: ['bye', 'goodbye', 'see you', 'later', 'cya', 'tata', 'good night', 'gn'],
     context: ['general'],
@@ -277,7 +286,9 @@ Higher-tier plans include additional RAM, storage, and priority support.`
 3. Check if the game version matches
 4. Try restarting the server from the control panel
 
-    If the issue persists, please open a support ticket with your server ID and a description of the problem, and our team will investigate immediately.`
+If the issue persists, please create a support ticket here: https://royal-web-seven.vercel.app/devlopment/tickets
+
+Our team will investigate immediately.`
   },
   {
     id: 'founder',
@@ -409,7 +420,7 @@ export function getAIResponse(message, history = []) {
 • Server setup and configuration
 • Technical troubleshooting
 
-Could you please rephrase your question? For example: "How much is Minecraft hosting?" or "I need help with my server."`;
+Or you can create a support ticket here: https://royal-web-seven.vercel.app/devlopment/tickets`;
   }
 
   let reply = top.response;

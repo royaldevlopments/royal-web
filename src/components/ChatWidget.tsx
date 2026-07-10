@@ -1,4 +1,4 @@
-import { MessageCircle, X, Send, Bot, User, Trash2 } from 'lucide-react';
+import { MessageCircle, X, Send, Bot, User, Trash2, Ticket, ExternalLink } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 
@@ -68,6 +68,38 @@ export default function ChatWidget() {
     setMessages([welcomeMessage]);
   }
 
+  function renderMessage(text) {
+    const ticketUrl = 'https://royal-web-seven.vercel.app/devlopment/tickets';
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    return (
+      <>
+        <div className="text-sm leading-relaxed whitespace-pre-wrap">
+          {parts.map((part, i) => {
+            if (part.startsWith('http')) {
+              const isTicket = part.includes('/tickets');
+              return isTicket ? (
+                <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{ background: '#1cc4e8', color: '#fff' }}>
+                  <Ticket className="w-3.5 h-3.5" /> Create Ticket <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+                  className="text-[#1cc4e8] underline hover:brightness-110">
+                  {part}
+                </a>
+              );
+            }
+            return <span key={i}>{part}</span>;
+          })}
+        </div>
+        {text.includes(ticketUrl) && (
+          <div className="mt-2 text-[10px] text-gray-500">Need more help? Click the button above to create a ticket.</div>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       {isOpen && (
@@ -98,7 +130,7 @@ export default function ChatWidget() {
                     {msg.role === 'user' ? <User className="w-3.5 h-3.5 text-[#1cc4e8]" /> : <Bot className="w-3.5 h-3.5 text-white" />}
                   </div>
                   <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${msg.role === 'user' ? 'bg-[#1cc4e8] text-white rounded-tr-none' : 'bg-[#1a1c2e] text-[#e2e8f0] rounded-tl-none border border-gray-800/50'}`}>
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                    {msg.role === 'user' ? <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</div> : renderMessage(msg.text)}
                   </div>
                 </div>
               ))}
