@@ -374,12 +374,35 @@ function scoreMessage(input, history) {
   return scored.slice(0, 3);
 }
 
+function queryComplexity(text) {
+  const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+  const len = words.length;
+  if (len <= 3) return 'short';
+  if (len <= 8) return 'medium';
+  return 'long';
+}
+
+function trimResponse(text, complexity) {
+  if (complexity === 'long') return text;
+  const paragraphs = text.split('\n\n').filter(Boolean);
+  if (complexity === 'short') {
+    const firstLine = paragraphs[0].split('\n')[0];
+    const sentences = firstLine.split(/(?<=[.!?])\s+/);
+    return sentences.slice(0, 2).join(' ');
+  }
+  return paragraphs[0] || text;
+}
+
 export function getAIResponse(message, history = []) {
   const results = scoreMessage(message, history);
   const top = results[0];
   const second = results[1];
+  const complexity = queryComplexity(message);
 
   if (!top || top.score === 0) {
+    if (complexity === 'short') {
+      return 'I can help with hosting plans, pricing, account issues, server setup, and technical support. What do you need?';
+    }
     return `I'm not sure I understand your question. I can help you with:
 • Hosting plans and pricing (Minecraft, Palworld, VPS, etc.)
 • Account and billing support
@@ -389,9 +412,10 @@ export function getAIResponse(message, history = []) {
 Could you please rephrase your question? For example: "How much is Minecraft hosting?" or "I need help with my server."`;
   }
 
-  if (second && second.score > 0 && second.score >= top.score * 0.7) {
-    return top.response + '\n\n' + second.response;
+  let reply = top.response;
+  if (second && second.score > 0 && second.score >= top.score * 0.7 && complexity === 'long') {
+    reply = top.response + '\n\n' + second.response;
   }
 
-  return top.response;
+  return trimResponse(reply, complexity);
 }
