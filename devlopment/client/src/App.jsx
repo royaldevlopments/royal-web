@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { api } from './api/axios';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -17,8 +19,10 @@ import PaymentMethods from './pages/PaymentMethods';
 import Admin from './pages/Admin';
 import Referrals from './pages/Referrals';
 import ApiTokens from './pages/ApiTokens';
+import Activity from './pages/Activity';
 import Layout from './components/Layout';
 import PublicLayout from './components/PublicLayout';
+import Maintenance from './pages/Maintenance';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -34,6 +38,24 @@ function Public({ children }) {
 }
 
 function App() {
+  const [maintenance, setMaintenance] = useState(false);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(true);
+
+  useEffect(() => {
+    api('/settings/maintenance')
+      .then(data => setMaintenance(data.maintenance))
+      .catch(() => {})
+      .finally(() => setMaintenanceLoading(false));
+  }, []);
+
+  if (maintenanceLoading) return (
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+    </div>
+  );
+
+  if (maintenance) return <Maintenance />;
+
   return (
     <AuthProvider>
       <Routes>
@@ -57,6 +79,7 @@ function App() {
           <Route path="/payment-methods" element={<PaymentMethods />} />
           <Route path="/referrals" element={<Referrals />} />
           <Route path="/api-tokens" element={<ApiTokens />} />
+          <Route path="/activity" element={<Activity />} />
           <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>

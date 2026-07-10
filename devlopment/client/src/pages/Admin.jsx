@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Users, Server, FileText, Ticket, DollarSign, TrendingUp, Package, Plus, X, Settings as SettingsIcon, Eye, EyeOff, CheckCircle, Layers, Trash2, Edit3, Upload, TicketCheck, Percent, History, Ban, Mail, Shield, Globe, Layout, ArrowLeft, Send, Paperclip } from 'lucide-react';
+import { Users, Server, FileText, Ticket, DollarSign, TrendingUp, Package, Plus, X, Settings as SettingsIcon, Eye, EyeOff, CheckCircle, Layers, Trash2, Edit3, Upload, TicketCheck, Percent, History, Ban, Mail, Shield, Globe, Layout, ArrowLeft, Send, Paperclip, Search, ShoppingCart, Download, CheckSquare } from 'lucide-react';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -28,12 +28,25 @@ export default function Admin() {
   const [editProduct, setEditProduct] = useState(null);
   const [customFields, setCustomFields] = useState([]);
   const [deliveryFields, setDeliveryFields] = useState([]);
+  const [editUser, setEditUser] = useState(null);
+  const [userForm, setUserForm] = useState({ name: '', email: '', phone: '', role: 'client', balance: '' });
+  const [userSearch, setUserSearch] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [bulkTab, setBulkTab] = useState('services');
+  const [bulkIds, setBulkIds] = useState([]);
+  const [bulkStatus, setBulkStatus] = useState('active');
+  const [selectAllBulk, setSelectAllBulk] = useState(false);
+
+  useEffect(() => { setBulkIds([]); setSelectAllBulk(false); }, [tab]);
 
   useEffect(() => {
     api('/admin/stats').then(setStats).catch(() => {});
     api('/admin/users').then(setUsers).catch(() => {});
+    api('/admin/orders').then(setOrders).catch(() => {});
     api('/admin/services').then(setServices).catch(() => {});
     api('/admin/invoices').then(setInvoices).catch(() => {});
+    api('/admin/transactions').then(setTransactions).catch(() => {});
     api('/admin/tickets').then(setTickets).catch(() => {});
     api('/admin/settings').then(s => {
       setSettings({ rz_key_id: s.rz_key_id || '', rz_key_secret: s.rz_key_secret || '', rz_test_mode: s.rz_test_mode || 'true', cf_client_id: s.cf_client_id || '', cf_client_secret: s.cf_client_secret || '', cf_test_mode: s.cf_test_mode || 'true', whmcs_url: s.whmcs_url || '', whmcs_identifier: s.whmcs_identifier || '', whmcs_secret: s.whmcs_secret || '', turnstile_key: s.turnstile_key || '', turnstile_secret: s.turnstile_secret || '', smtp_url: s.smtp_url || '', smtp_from: s.smtp_from || '', tax_rate: s.tax_rate || '', tax_name: s.tax_name || 'GST', site_url: s.site_url || '', maintenance_mode: s.maintenance_mode || 'false', currency: s.currency || 'INR', google_client_id: s.google_client_id || '', google_client_secret: s.google_client_secret || '', discord_client_id: s.discord_client_id || '', discord_client_secret: s.discord_client_secret || '' });
@@ -83,6 +96,42 @@ export default function Admin() {
       setDeliverFiles(p => ({ ...p, [key]: { id: res.id, name: file.name } }));
       setDeliverForm(p => ({ ...p, [key]: res.id }));
     } catch (e) { alert('Upload failed: ' + e.message); }
+  };
+
+  const openEditUser = (u) => {
+    setUserForm({ name: u.name || '', email: u.email, phone: u.phone || '', role: u.role, balance: String(u.balance) });
+    setEditUser(u);
+  };
+
+  const saveUser = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/admin/users/' + editUser.id, { method: 'PUT', body: JSON.stringify(userForm) });
+      setEditUser(null);
+      api('/admin/users').then(setUsers);
+    } catch (e) { alert(e.message); }
+  };
+
+  const deleteUser = async (u) => {
+    if (!confirm('Delete user "' + (u.name || u.email) + '"? This action cannot be undone.')) return;
+    try {
+      await api('/admin/users/' + u.id, { method: 'DELETE' });
+      api('/admin/users').then(setUsers);
+    } catch (e) { alert(e.message); }
+  };
+
+  const exportCsv = async (type) => {
+    try {
+      const data = await api('/admin/export/' + type);
+      const blob = new Blob([data.csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = data.filename || (type + '-' + Date.now() + '.csv'); a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  };
+
+  const toggleBulkId = (id) => {
+    setBulkIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
   const createProduct = async (e) => {
@@ -181,8 +230,10 @@ export default function Admin() {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
     { id: 'users', label: 'Users', icon: Users },
+    { id: 'orders', label: 'Orders', icon: ShoppingCart },
     { id: 'services', label: 'Services', icon: Server },
     { id: 'invoices', label: 'Invoices', icon: FileText },
+    { id: 'transactions', label: 'Transactions', icon: DollarSign },
     { id: 'tickets', label: 'Tickets', icon: Ticket },
     { id: 'coupons', label: 'Coupons', icon: Percent },
     { id: 'cancellations', label: 'Cancellations', icon: Ban },
@@ -216,28 +267,121 @@ export default function Admin() {
       )}
 
       {tab === 'users' && (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">Name</th><th className="text-left p-3">Email</th><th className="text-left p-3">Role</th><th className="text-right p-3">Balance</th><th className="text-right p-3">Joined</th></tr></thead>
-            <tbody>{users.map(u => <tr key={u.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{u.name || '—'}</td><td className="p-3 text-muted-foreground">{u.email}</td><td className="p-3"><span className="badge badge-active capitalize">{u.role}</span></td><td className="p-3 text-right text-foreground">₹{u.balance}</td><td className="p-3 text-right text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td></tr>)}</tbody>
-          </table>
+        <div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search users..." className="input-field pl-9 text-sm" />
+            </div>
+            <span className="text-xs text-muted-foreground">{users.length} users</span>
+            <button onClick={() => exportCsv('users')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors ml-auto"><Download className="w-3.5 h-3.5" /> CSV</button>
+          </div>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">Name</th><th className="text-left p-3">Email</th><th className="text-left p-3">Phone</th><th className="text-left p-3">Role</th><th className="text-right p-3">Balance</th><th className="text-right p-3">Joined</th><th className="text-right p-3">Actions</th></tr></thead>
+              <tbody>{users.filter(u => !userSearch || u.name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email.toLowerCase().includes(userSearch.toLowerCase())).map(u => <tr key={u.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{u.name || '—'}</td><td className="p-3 text-muted-foreground">{u.email}</td><td className="p-3 text-muted-foreground">{u.phone || '—'}</td><td className="p-3"><span className={`badge ${u.role === 'admin' ? 'badge-active' : 'badge-pending'} capitalize`}>{u.role}</span></td><td className="p-3 text-right text-foreground">₹{u.balance}</td><td className="p-3 text-right text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td><td className="p-3 text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => openEditUser(u)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button><button onClick={() => deleteUser(u)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-danger transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button></div></td></tr>)}</tbody>
+            </table>
+          </div>
+
+          {/* Edit User Modal */}
+          {editUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditUser(null)}>
+              <div className="bg-card rounded-xl border border-border p-6 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-sm font-bold text-foreground">Edit User</h3>
+                  <button onClick={() => setEditUser(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+                </div>
+                <form onSubmit={saveUser} className="space-y-4">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Name</label>
+                    <input value={userForm.name} onChange={e => setUserForm(p => ({ ...p, name: e.target.value }))} className="input-field text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Email</label>
+                    <input type="email" value={userForm.email} onChange={e => setUserForm(p => ({ ...p, email: e.target.value }))} className="input-field text-sm" required />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Phone</label>
+                    <input value={userForm.phone} onChange={e => setUserForm(p => ({ ...p, phone: e.target.value }))} className="input-field text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Role</label>
+                    <select value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))} className="input-field text-sm">
+                      <option value="client">Client</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Balance (₹)</label>
+                    <input type="number" step="0.01" value={userForm.balance} onChange={e => setUserForm(p => ({ ...p, balance: e.target.value }))} className="input-field text-sm" />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button type="submit" className="btn-primary flex-1 text-sm">Save Changes</button>
+                    <button type="button" onClick={() => setEditUser(null)} className="flex-1 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'orders' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-muted-foreground">{orders.length} orders</span>
+            <button onClick={() => exportCsv('orders')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"><Download className="w-3.5 h-3.5" /> CSV</button>
+          </div>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">User</th><th className="text-left p-3">Email</th><th className="text-left p-3">Product</th><th className="text-right p-3">Amount</th><th className="text-left p-3">Status</th><th className="text-right p-3">Date</th></tr></thead>
+              <tbody>{orders.map(o => <tr key={o.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{o.user_name || '—'}</td><td className="p-3 text-muted-foreground">{o.user_email}</td><td className="p-3 text-muted-foreground">{o.product_name || '—'}</td><td className="p-3 text-right text-foreground">₹{o.amount}</td><td className="p-3"><span className={`badge ${o.status === 'active' ? 'badge-active' : o.status === 'cancelled' ? 'badge-suspended' : 'badge-pending'}`}>{o.status}</span></td><td className="p-3 text-right text-muted-foreground">{new Date(o.created_at).toLocaleDateString()}</td></tr>)}</tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {tab === 'services' && (
         <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{services.length} services</span>
+            <div className="flex items-center gap-2">
+              {bulkIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{bulkIds.length} selected</span>
+                  <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="text-xs bg-secondary border border-border rounded-lg p-1.5 text-foreground">
+                    <option value="pending">Set Pending</option>
+                    <option value="active">Set Active</option>
+                    <option value="suspended">Set Suspended</option>
+                    <option value="cancelled">Set Cancelled</option>
+                  </select>
+                  <button onClick={async () => { try { await api('/admin/bulk/service-status', { method: 'POST', body: JSON.stringify({ ids: bulkIds, status: bulkStatus }) }); setBulkIds([]); setSelectAllBulk(false); api('/admin/services').then(setServices); } catch (e) { alert(e.message); } }} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent text-white hover:opacity-90 transition-opacity">Apply</button>
+                </div>
+              )}
+              <button onClick={() => exportCsv('services')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"><Download className="w-3.5 h-3.5" /> CSV</button>
+            </div>
+          </div>
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">User</th><th className="text-left p-3">Product</th><th className="text-left p-3">Status</th><th className="text-right p-3">Price</th><th className="text-right p-3">Actions</th></tr></thead>
-              <tbody>{services.map(s => <tr key={s.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{s.user_name}</td><td className="p-3 text-muted-foreground">{s.product_name}</td><td className="p-3"><span className={`badge ${s.status === 'active' ? 'badge-active' : s.status === 'suspended' ? 'badge-suspended' : 'badge-pending'}`}>{s.status}</span></td><td className="p-3 text-right text-foreground">₹{s.price}</td><td className="p-3 text-right flex items-center justify-end gap-2">
-                <select value={s.status} onChange={e => updateServiceStatus(s.id, e.target.value)} className="text-xs bg-secondary border border-border rounded-lg p-1 text-foreground">
-                  <option value="pending">Pending</option>
-                  <option value="active">Active</option>
-                  <option value="suspended">Suspended</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-                <button onClick={() => openDeliver(s)} className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded-lg transition-colors whitespace-nowrap">Deliver</button>
-              </td></tr>)}</tbody>
+              <thead><tr className="text-xs text-muted-foreground border-b border-border">
+                <th className="p-3 w-10"><input type="checkbox" checked={selectAllBulk && services.length > 0} onChange={e => { setSelectAllBulk(e.target.checked); setBulkIds(e.target.checked ? services.map(s => s.id) : []); }} className="w-4 h-4 rounded accent-primary" /></th>
+                <th className="text-left p-3">User</th><th className="text-left p-3">Product</th><th className="text-left p-3">Status</th><th className="text-right p-3">Price</th><th className="text-right p-3">Actions</th>
+              </tr></thead>
+              <tbody>{services.map(s => <tr key={s.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
+                <td className="p-3"><input type="checkbox" checked={bulkIds.includes(s.id)} onChange={() => toggleBulkId(s.id)} className="w-4 h-4 rounded accent-primary" /></td>
+                <td className="p-3 text-foreground">{s.user_name}</td><td className="p-3 text-muted-foreground">{s.product_name}</td>
+                <td className="p-3"><span className={`badge ${s.status === 'active' ? 'badge-active' : s.status === 'suspended' ? 'badge-suspended' : 'badge-pending'}`}>{s.status}</span></td>
+                <td className="p-3 text-right text-foreground">₹{s.price}</td>
+                <td className="p-3 text-right flex items-center justify-end gap-2">
+                  <select value={s.status} onChange={e => updateServiceStatus(s.id, e.target.value)} className="text-xs bg-secondary border border-border rounded-lg p-1 text-foreground">
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <button onClick={() => openDeliver(s)} className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded-lg transition-colors whitespace-nowrap">Deliver</button>
+                </td>
+              </tr>)}</tbody>
             </table>
           </div>
         </div>
@@ -314,7 +458,65 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === 'invoices' && <AdminInvoicesTab api={api} invoices={invoices} setInvoices={setInvoices} />}
+      {tab === 'invoices' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{invoices.length} invoices</span>
+            <div className="flex items-center gap-2">
+              {bulkIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{bulkIds.length} selected</span>
+                  <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="text-xs bg-secondary border border-border rounded-lg p-1.5 text-foreground">
+                    <option value="paid">Mark Paid</option>
+                    <option value="unpaid">Mark Unpaid</option>
+                    <option value="cancelled">Mark Cancelled</option>
+                  </select>
+                  <button onClick={async () => { try { await api('/admin/bulk/invoice-status', { method: 'POST', body: JSON.stringify({ ids: bulkIds, status: bulkStatus }) }); setBulkIds([]); setSelectAllBulk(false); api('/admin/invoices').then(setInvoices); } catch (e) { alert(e.message); } }} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent text-white hover:opacity-90 transition-opacity">Apply</button>
+                </div>
+              )}
+              <button onClick={() => exportCsv('invoices')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"><Download className="w-3.5 h-3.5" /> CSV</button>
+            </div>
+          </div>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-muted-foreground border-b border-border">
+                <th className="p-3 w-10"><input type="checkbox" checked={selectAllBulk && invoices.length > 0} onChange={e => { setSelectAllBulk(e.target.checked); setBulkIds(e.target.checked ? invoices.map(i => i.id) : []); }} className="w-4 h-4 rounded accent-primary" /></th>
+                <th className="text-left p-3">Invoice</th><th className="text-left p-3">User</th><th className="text-right p-3">Amount</th><th className="text-left p-3">Status</th><th className="text-left p-3">Method</th><th className="text-right p-3">Date</th><th className="text-right p-3">Actions</th>
+              </tr></thead>
+              <tbody>{invoices.map(i => <tr key={i.id} className="border-b border-border last:border-0 hover:bg-secondary/30">
+                <td className="p-3"><input type="checkbox" checked={bulkIds.includes(i.id)} onChange={() => toggleBulkId(i.id)} className="w-4 h-4 rounded accent-primary" /></td>
+                <td className="p-3 text-foreground font-medium text-xs">{i.invoice_no || '—'}</td>
+                <td className="p-3 text-muted-foreground">{i.user_name}</td>
+                <td className="p-3 text-right text-foreground">₹{i.amount}</td>
+                <td className="p-3"><span className={`badge ${i.status === 'paid' ? 'badge-active' : i.status === 'cancelled' ? 'badge-suspended' : 'badge-pending'}`}>{i.status}</span></td>
+                <td className="p-3 text-muted-foreground text-xs">{i.payment_method || '—'}</td>
+                <td className="p-3 text-right text-muted-foreground text-xs">{new Date(i.created_at).toLocaleDateString()}</td>
+                <td className="p-3 text-right">
+                  <select value={i.status} onChange={async e => { try { await api('/admin/invoices/' + i.id + '/status', { method: 'POST', body: JSON.stringify({ status: e.target.value }) }); api('/admin/invoices').then(setInvoices); } catch (e) { alert(e.message); } }} className="text-xs bg-secondary border border-border rounded-lg p-1 text-foreground">
+                    <option value="unpaid">Unpaid</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === 'transactions' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-muted-foreground">{transactions.length} transactions</span>
+          </div>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-muted-foreground border-b border-border"><th className="text-left p-3">User</th><th className="text-left p-3">Email</th><th className="text-left p-3">Type</th><th className="text-right p-3">Amount</th><th className="text-left p-3">Description</th><th className="text-right p-3">Date</th></tr></thead>
+              <tbody>{transactions.map(t => <tr key={t.id} className="border-b border-border last:border-0 hover:bg-secondary/30"><td className="p-3 text-foreground">{t.user_name || '—'}</td><td className="p-3 text-muted-foreground">{t.user_email}</td><td className="p-3"><span className={`badge ${t.type === 'credit' ? 'badge-active' : 'badge-pending'}`}>{t.type}</span></td><td className="p-3 text-right text-foreground">₹{t.amount}</td><td className="p-3 text-muted-foreground text-xs">{t.description || '—'}</td><td className="p-3 text-right text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {tab === 'tickets' && <AdminTicketsTab api={api} tickets={tickets} setTickets={setTickets} />}
 

@@ -93,6 +93,36 @@ function calcTax(amount) {
   return { rate: parseFloat(rate.value), name: name?.value || 'Tax', amount: Math.round(amount * parseFloat(rate.value) / 100 * 100) / 100 };
 }
 
+async function autoProvision(serviceId) {
+  const service = await db.prepare('SELECT s.*, p.delivery_fields FROM services s LEFT JOIN products p ON s.product_id = p.id WHERE s.id = $1').get(serviceId);
+  if (!service) return;
+  let deliveryFields = [];
+  try { deliveryFields = JSON.parse(service.delivery_fields || '[]'); } catch {}
+  if (deliveryFields.length === 0) return;
+  const delivery = {};
+  const idShort = serviceId.replace(/-/g, '').slice(0, 8);
+  for (const field of deliveryFields) {
+    const label = field.label || '';
+    let value;
+    if (/password/i.test(label)) {
+      value = crypto.randomBytes(8).toString('hex');
+    } else if (/username|user/i.test(label)) {
+      value = 'u_' + crypto.randomBytes(4).toString('hex');
+    } else if (/hostname|domain|server|url|ip/i.test(label)) {
+      value = 'server' + idShort + '.royaldev.com';
+    } else if (/port/i.test(label)) {
+      value = '2083';
+    } else {
+      value = crypto.randomBytes(6).toString('hex');
+    }
+    delivery[field.key || label] = value;
+  }
+  const now = new Date().toISOString();
+  await db.prepare('UPDATE services SET delivery = $1, updated_at = $2 WHERE id = $3').run(JSON.stringify(delivery), now, serviceId);
+  await db.prepare('INSERT INTO notifications (id, user_id, title, message, type) VALUES ($1, $2, $3, $4, $5)').run(uuidv4(), service.user_id, 'Service Provisioned', `Your service ${service.name} has been provisioned. Check your service details for credentials.`, 'success');
+  logActivity(service.user_id, null, 'provision', `Service ${service.name} auto-provisioned`);
+}
+
 async function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
@@ -104,6 +134,25 @@ function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 }
+
+// Maintenance mode check
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api/auth/login') || req.path.startsWith('/api/auth/me') || req.path === '/api/settings/maintenance' || req.path.startsWith('/api/turnstile-key') || req.path.startsWith('/api/_health')) return next();
+  const setting = await db.prepare("SELECT value FROM settings WHERE key = 'maintenance_mode'").get();
+  if (setting?.value === 'true') {
+    const user = req.user ? await db.prepare('SELECT role FROM users WHERE id = $1').get(req.user.id) : null;
+    if (user?.role !== 'admin') {
+      return res.status(503).json({ error: 'Site is under maintenance. Please check back later.', maintenance: true });
+    }
+  }
+  next();
+});
+
+// Maintenance status endpoint
+app.get('/api/settings/maintenance', async (req, res) => {
+  const setting = await db.prepare("SELECT value FROM settings WHERE key = 'maintenance_mode'").get();
+  res.json({ maintenance: setting?.value === 'true' });
+});
 
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -137,9 +186,41 @@ app.post('/api/auth/login', async (req, res) => {
     if (!(await verifyTurnstile(turnstile_token))) return res.status(400).json({ error: 'Captcha verification failed' });
     const user = await db.prepare('SELECT * FROM users WHERE email = $1').get(email);
     if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Invalid credentials' });
+    if (user.totp_enabled) {
+      const tempToken = jwt.sign({ id: user.id, step: '2fa' }, JWT_SECRET, { expiresIn: '5m' });
+      return res.json({ requires_2fa: true, temp_token: tempToken });
+    }
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     logActivity(user.id, null, 'login', `User logged in: ${email}`);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, balance: user.balance, avatar: user.avatar } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/login/2fa', async (req, res) => {
+  try {
+    const speakeasy = require('speakeasy');
+    const { temp_token, token } = req.body;
+    let payload;
+    try { payload = jwt.verify(temp_token, JWT_SECRET); } catch { return res.status(400).json({ error: 'Session expired' }); }
+    if (payload.step !== '2fa') return res.status(400).json({ error: 'Invalid session' });
+    const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(payload.id);
+    if (!user?.totp_secret) return res.status(400).json({ error: '2FA not configured' });
+    const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token, window: 1 });
+    if (!verified) {
+      const recoveryCodes = await db.prepare('SELECT id, code_hash FROM recovery_codes WHERE user_id = $1 AND used = 0').all(user.id);
+      let matched = null;
+      for (const rc of recoveryCodes) {
+        if (crypto.createHash('sha256').update(token).digest('hex') === rc.code_hash) {
+          matched = rc.id;
+          break;
+        }
+      }
+      if (!matched) return res.status(400).json({ error: 'Invalid code' });
+      await db.prepare('UPDATE recovery_codes SET used = 1 WHERE id = $1').run(matched);
+    }
+    const jwtToken = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    logActivity(user.id, null, 'login', `User logged in with 2FA: ${user.email}`);
+    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, balance: user.balance, avatar: user.avatar } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -253,36 +334,113 @@ app.get('/api/invoices/:id', auth, async (req, res) => {
   res.json({ ...invoice, user });
 });
 
+function renderInvoiceHtml(invoice, user, items, settings) {
+  const currency = settings.currency || 'INR';
+  const taxName = settings.tax_name || 'Tax';
+  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price ?? i.amount) || 0), 0);
+  const statusColor = invoice.status === 'paid' ? '#22c55e' : invoice.status === 'unpaid' ? '#ef4444' : '#f59e0b';
+  const rows = items.map((i, idx) => {
+    const amt = parseFloat(i.price ?? i.amount) || 0;
+    return `<tr><td>${idx + 1}</td><td>${i.name || 'Service'}</td><td class="amt">${currency} ${amt.toFixed(2)}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Invoice ${invoice.invoice_no || invoice.id}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0b1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;padding:40px 20px;display:flex;justify-content:center}
+.invoice{max-width:800px;width:100%;background:#111322;border:1px solid #1e2030;border-radius:16px;padding:48px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px}
+.brand h1{font-size:28px;letter-spacing:-0.5px}
+.brand h1 .accent{color:#1cc4e8}
+.brand h1 .white{color:#f1f5f9}
+.brand .tagline{color:#1cc4e8;font-size:11px;letter-spacing:2px;margin-top:2px;text-transform:uppercase}
+.title h2{font-size:24px;color:#f1f5f9;text-align:right}
+.title .num{color:#64748b;font-size:14px;text-align:right}
+.divider{height:1px;background:#1e2030;margin:24px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px}
+.label{color:#64748b;font-size:12px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
+.value{color:#f1f5f9;font-size:14px;line-height:1.5}
+table{width:100%;border-collapse:collapse;margin-bottom:24px}
+th{text-align:left;padding:12px 8px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #1e2030}
+td{padding:14px 8px;font-size:14px;border-bottom:1px solid rgba(30,32,48,.5);color:#cbd5e1}
+td.amt{text-align:right;font-family:ui-monospace,monospace}
+.totals{margin-left:auto;width:280px}
+.totals .row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px}
+.totals .row .lbl{color:#64748b}
+.totals .row .val{color:#cbd5e1;font-family:ui-monospace,monospace}
+.totals .total{border-top:1px solid #1e2030;margin-top:4px;padding-top:12px;font-size:18px;font-weight:700}
+.totals .total .lbl{color:#f1f5f9}
+.totals .total .val{color:#1cc4e8}
+.status{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:${statusColor};border:1px solid ${statusColor};background:${statusColor}15}
+.footer{text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #1e2030;color:#475569;font-size:12px}
+@media print{body{background:#fff;padding:0}.invoice{box-shadow:none;border:none;border-radius:0}body{background:#0a0b1e}}
+</style>
+</head>
+<body>
+<div class="invoice">
+<div class="header">
+<div class="brand">
+<h1><span class="accent">ROYAL</span> <span class="white">DEVLOPMENTS</span></h1>
+<div class="tagline">Building Solutions Power Future</div>
+</div>
+<div class="title">
+<h2>INVOICE</h2>
+<div class="num">#${invoice.invoice_no || invoice.id}</div>
+</div>
+</div>
+<div class="divider"></div>
+<div class="grid">
+<div>
+<div class="label">Bill To</div>
+<div class="value">${user.name || ''}<br>${user.email || ''}${user.address ? `<br>${user.address}${user.city ? ', ' + user.city : ''}${user.state ? ', ' + user.state : ''}${user.country ? '<br>' + user.country : ''}` : ''}</div>
+</div>
+<div style="text-align:right">
+<div class="label">Status</div>
+<div class="value"><span class="status">${invoice.status || 'unknown'}</span></div>
+<div style="margin-top:12px">
+<div class="label">Issue Date</div>
+<div class="value">${new Date(invoice.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+</div>
+${invoice.due_date ? `<div style="margin-top:12px">
+<div class="label">Due Date</div>
+<div class="value">${new Date(invoice.due_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+</div>` : ''}
+</div>
+</div>
+<div class="divider"></div>
+${invoice.service_name ? `<div style="margin-bottom:20px;font-size:14px"><span class="label">Service</span><div class="value" style="margin-top:4px">${invoice.service_name}</div></div>` : ''}
+<table>
+<thead><tr><th style="width:40px">#</th><th>Item</th><th style="text-align:right;width:140px">Amount</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="3" style="text-align:center;color:#64748b;padding:24px">No line items</td></tr>'}</tbody>
+</table>
+<div class="totals">
+${subtotal !== total ? `<div class="row"><span class="lbl">Subtotal</span><span class="val">${currency} ${subtotal.toFixed(2)}</span></div>` : ''}
+${items[0] && items[0].tax > 0 ? `<div class="row"><span class="lbl">${taxName}</span><span class="val">${currency} ${(parseFloat(items[0].tax) || 0).toFixed(2)}</span></div>` : (taxAmount > 0 ? `<div class="row"><span class="lbl">${taxName}</span><span class="val">${currency} ${taxAmount.toFixed(2)}</span></div>` : '')}
+<div class="row total"><span class="lbl">Total</span><span class="val">${currency} ${(parseFloat(invoice.amount) || 0).toFixed(2)}</span></div>
+</div>
+<div class="footer">Thank you for your business!</div>
+</div>
+</body>
+</html>`;
+}
+
 app.get('/api/invoices/:id/pdf', auth, async (req, res) => {
   try {
-    const PDFDocument = (await import('pdfkit')).default;
     const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(req.user.id);
     const invoice = await db.prepare("SELECT i.*, s.name as service_name FROM invoices i LEFT JOIN services s ON i.service_id = s.id WHERE i.id = $1 AND (i.user_id = $2 OR $3 IN (SELECT id FROM users WHERE role = 'admin'))").get(req.params.id, req.user.id, req.user.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const settings = {};
     (await db.prepare('SELECT key, value FROM settings').all()).forEach(r => settings[r.key] = r.value);
-    const currency = settings.currency || 'INR';
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=invoice-${invoice.invoice_no || invoice.id}.pdf`);
-    doc.pipe(res);
-    doc.fontSize(24).font('Helvetica-Bold').fillColor('#1cc4e8').text('ROYAL', { continued: true }).fillColor('#f1f5f9').text(' DEVLOPMENTS');
-    doc.moveDown();
-    doc.fontSize(18).font('Helvetica-Bold').fillColor('#f1f5f9').text('INVOICE', { align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(`#${invoice.invoice_no || invoice.id}`, { align: 'right' });
-    doc.moveDown();
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#334155').stroke();
-    doc.moveDown();
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9').text('Bill To:', 50, doc.y);
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(user.name, 50, doc.y + 15);
-    doc.text(user.email, 50, doc.y + 30);
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9').text('Status:', 350, doc.y);
-    doc.fontSize(10).font('Helvetica').fillColor(invoice.status === 'paid' ? '#22c55e' : '#ef4444').text(invoice.status.toUpperCase(), 430, doc.y + 15);
-    doc.moveDown(3);
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#f1f5f9').text(`Total: ${currency} ${invoice.amount}`, { align: 'right' });
-    doc.moveDown(4);
-    doc.fontSize(8).fillColor('#64748b').text('Thank you for your business!', 50, doc.y, { align: 'center' });
-    doc.end();
+    let items = [];
+    try { items = JSON.parse(invoice.items || '[]'); } catch {}
+    const html = renderInvoiceHtml(invoice, user, items, settings);
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Disposition', `inline; filename=invoice-${invoice.invoice_no || invoice.id}.html`);
+    res.send(html);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -300,6 +458,7 @@ app.post('/api/pay/:invoiceId', auth, async (req, res) => {
     await db.prepare('UPDATE invoices SET status = $1, paid_at = $2, payment_method = $3 WHERE id = $4').run('paid', new Date().toISOString(), methodName, req.params.invoiceId);
     await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3').run('active', new Date().toISOString(), invoice.service_id);
     await db.prepare('UPDATE orders SET status = $1 WHERE service_id = $2').run('active', invoice.service_id);
+    await autoProvision(invoice.service_id);
     if (method === 'wallet') {
       const user = await db.prepare('SELECT balance FROM users WHERE id = $1').get(req.user.id);
       if (!user || user.balance < invoice.amount) return res.status(400).json({ error: 'Insufficient wallet balance' });
@@ -323,6 +482,21 @@ app.get('/api/dashboard', auth, async (req, res) => {
   const recentOrders = await db.prepare('SELECT o.*, p.name as product_name FROM orders o LEFT JOIN products p ON o.product_id = p.id WHERE o.user_id = $1 ORDER BY o.created_at DESC LIMIT 5').all(userId);
   const userWhmcs = await db.prepare('SELECT whmcs_client_id FROM users WHERE id = $1').get(userId);
   res.json({ stats: { activeServices: activeServices.count, unpaidInvoices: unpaidInvoices.count, openTickets: openTickets.count, totalOrders: totalOrders.count }, recentInvoices, recentServices, recentTickets, recentOrders, whmcs_client_id: userWhmcs?.whmcs_client_id || null });
+});
+
+app.get('/api/dashboard/charts', auth, async (req, res) => {
+  const userId = req.user.id;
+  const monthlyInvoices = await db.prepare(`
+    SELECT TO_CHAR(created_at, 'Mon') as month, EXTRACT(MONTH from created_at) as m, EXTRACT(YEAR from created_at) as y, SUM(amount) as revenue, COUNT(*) as count
+    FROM invoices WHERE user_id = $1 AND created_at > NOW() - INTERVAL '6 months'
+    GROUP BY y, m, month ORDER BY y, m
+  `).all(userId);
+  const serviceHistory = await db.prepare(`
+    SELECT TO_CHAR(created_at, 'Mon') as month, EXTRACT(MONTH from created_at) as m, EXTRACT(YEAR from created_at) as y, COUNT(*) as count
+    FROM services WHERE user_id = $1 AND created_at > NOW() - INTERVAL '6 months'
+    GROUP BY y, m, month ORDER BY y, m
+  `).all(userId);
+  res.json({ monthlyInvoices, serviceHistory });
 });
 
 app.get('/api/tickets', auth, async (req, res) => {
@@ -377,6 +551,95 @@ app.put('/api/profile/password', auth, async (req, res) => {
   if (!(await bcrypt.compare(current, user.password))) return res.status(400).json({ error: 'Current password incorrect' });
   await db.prepare('UPDATE users SET password = $1, updated_at = $2 WHERE id = $3').run(await bcrypt.hash(newpass, 10), new Date().toISOString(), req.user.id);
   res.json({ success: true });
+});
+
+app.get('/api/profile/2fa/status', auth, async (req, res) => {
+  const user = await db.prepare('SELECT totp_enabled FROM users WHERE id = $1').get(req.user.id);
+  res.json({ enabled: !!user?.totp_enabled });
+});
+
+app.post('/api/profile/2fa/setup', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const qrcode = require('qrcode');
+  const secret = speakeasy.generateSecret({ name: 'Royal Devlopments (' + req.user.email + ')' });
+  const qr = await qrcode.toDataURL(secret.otpauth_url);
+  await db.prepare('UPDATE users SET totp_secret = $1, updated_at = $2 WHERE id = $3').run(secret.base32, new Date().toISOString(), req.user.id);
+  const recoverCodes = [];
+  for (let i = 0; i < 8; i++) {
+    const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    await db.prepare('INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ($1, $2, $3)').run(uuidv4(), req.user.id, hash);
+    recoverCodes.push(code);
+  }
+  res.json({ secret: secret.base32, qr, recovery_codes: recoverCodes });
+});
+
+app.post('/api/profile/2fa/verify', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const { token } = req.body;
+  const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(req.user.id);
+  if (!user?.totp_secret) return res.status(400).json({ error: '2FA not set up' });
+  const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token });
+  if (!verified) return res.status(400).json({ error: 'Invalid code' });
+  await db.prepare('UPDATE users SET totp_enabled = $1, updated_at = $2 WHERE id = $3').run(true, new Date().toISOString(), req.user.id);
+  res.json({ success: true });
+});
+
+app.post('/api/profile/2fa/disable', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const { token, password } = req.body;
+  const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(req.user.id);
+  if (token) {
+    const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token });
+    if (!verified) return res.status(400).json({ error: 'Invalid code' });
+  } else if (password) {
+    if (!(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Password incorrect' });
+  } else {
+    return res.status(400).json({ error: 'Token or password required' });
+  }
+  await db.prepare("UPDATE users SET totp_secret = NULL, totp_enabled = FALSE, updated_at = $1 WHERE id = $2").run(new Date().toISOString(), req.user.id);
+  res.json({ success: true });
+});
+
+app.post('/api/profile/2fa/recovery-codes', auth, async (req, res) => {
+  await db.prepare('UPDATE recovery_codes SET used = 1 WHERE user_id = $1 AND used = 0').run(req.user.id);
+  const codes = [];
+  for (let i = 0; i < 8; i++) {
+    const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    await db.prepare('INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ($1, $2, $3)').run(uuidv4(), req.user.id, hash);
+    codes.push(code);
+  }
+  res.json({ recovery_codes: codes });
+});
+
+// Notification preferences
+app.get('/api/notification-preferences', auth, async (req, res) => {
+  let prefs = await db.prepare('SELECT * FROM notification_preferences WHERE user_id = $1').get(req.user.id);
+  if (!prefs) {
+    const id = uuidv4();
+    await db.prepare('INSERT INTO notification_preferences (id, user_id) VALUES ($1, $2)').run(id, req.user.id);
+    prefs = { id, user_id: req.user.id, invoice_emails: 1, support_emails: 1, marketing_emails: 1, service_emails: 1 };
+  }
+  res.json(prefs);
+});
+
+app.put('/api/notification-preferences', auth, async (req, res) => {
+  const { invoice_emails, support_emails, marketing_emails, service_emails } = req.body;
+  const existing = await db.prepare('SELECT id FROM notification_preferences WHERE user_id = $1').get(req.user.id);
+  if (!existing) {
+    const id = uuidv4();
+    await db.prepare('INSERT INTO notification_preferences (id, user_id, invoice_emails, support_emails, marketing_emails, service_emails) VALUES ($1, $2, $3, $4, $5, $6)').run(id, req.user.id, invoice_emails ?? 1, support_emails ?? 1, marketing_emails ?? 1, service_emails ?? 1);
+  } else {
+    await db.prepare('UPDATE notification_preferences SET invoice_emails = $1, support_emails = $2, marketing_emails = $3, service_emails = $4 WHERE user_id = $5').run(invoice_emails ?? 1, support_emails ?? 1, marketing_emails ?? 1, service_emails ?? 1, req.user.id);
+  }
+  const prefs = await db.prepare('SELECT * FROM notification_preferences WHERE user_id = $1').get(req.user.id);
+  res.json(prefs);
+});
+
+app.get('/api/activity', auth, async (req, res) => {
+  const logs = await db.prepare('SELECT id, action, details, created_at FROM activity_log WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50').all(req.user.id);
+  res.json(logs);
 });
 
 app.get('/api/notifications', auth, async (req, res) => {
@@ -459,6 +722,90 @@ app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
   res.json(await db.prepare('SELECT id, email, name, phone, balance, role, created_at FROM users ORDER BY created_at DESC').all());
 });
 
+app.put('/api/admin/users/:id', auth, adminOnly, async (req, res) => {
+  const { name, email, phone, role, balance } = req.body;
+  const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const updates = [];
+  const vals = [];
+  let idx = 1;
+  if (name !== undefined) { updates.push(`name = $${idx++}`); vals.push(name); }
+  if (email !== undefined) { updates.push(`email = $${idx++}`); vals.push(email); }
+  if (phone !== undefined) { updates.push(`phone = $${idx++}`); vals.push(phone); }
+  if (role !== undefined) { updates.push(`role = $${idx++}`); vals.push(role); }
+  if (balance !== undefined) { updates.push(`balance = $${idx++}`); vals.push(balance); }
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+  updates.push(`updated_at = $${idx++}`);
+  vals.push(new Date().toISOString());
+  vals.push(req.params.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`).run(...vals);
+  logActivity(req.user.id, req.params.id, 'Updated user', JSON.stringify(req.body));
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/users/:id', auth, adminOnly, async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = $1').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  await db.prepare('DELETE FROM users WHERE id = $1').run(req.params.id);
+  logActivity(req.user.id, req.params.id, 'Deleted user', user.email);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/orders', auth, adminOnly, async (req, res) => {
+  res.json(await db.prepare("SELECT o.*, u.name as user_name, u.email as user_email, p.name as product_name FROM orders o LEFT JOIN users u ON o.user_id = u.id LEFT JOIN products p ON o.product_id = p.id ORDER BY o.created_at DESC").all());
+});
+
+app.get('/api/admin/transactions', auth, adminOnly, async (req, res) => {
+  res.json(await db.prepare("SELECT t.*, u.name as user_name, u.email as user_email FROM transactions t LEFT JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC").all());
+});
+
+app.post('/api/admin/bulk/service-status', auth, adminOnly, async (req, res) => {
+  const { ids, status } = req.body;
+  if (!ids?.length || !['pending','active','suspended','cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid request' });
+  const stmt = await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3');
+  for (const id of ids) await stmt.run(status, new Date().toISOString(), id);
+  logActivity(req.user.id, null, 'Bulk service status update', `${ids.length} services set to ${status}`);
+  res.json({ success: true, count: ids.length });
+});
+
+app.post('/api/admin/bulk/invoice-status', auth, adminOnly, async (req, res) => {
+  const { ids, status } = req.body;
+  if (!ids?.length || !['paid','unpaid','cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid request' });
+  const stmt = await db.prepare('UPDATE invoices SET status = $1, updated_at = $2 WHERE id = $3');
+  for (const id of ids) await stmt.run(status, new Date().toISOString(), id);
+  if (status === 'paid') {
+    const actStmt = await db.prepare("UPDATE services SET status = 'active', updated_at = $1 WHERE id IN (SELECT service_id FROM invoices WHERE id = $2)");
+    for (const id of ids) await actStmt.run(new Date().toISOString(), id);
+  }
+  logActivity(req.user.id, null, 'Bulk invoice status update', `${ids.length} invoices set to ${status}`);
+  res.json({ success: true, count: ids.length });
+});
+
+app.get('/api/admin/export/:type', auth, adminOnly, async (req, res) => {
+  const { type } = req.params;
+  let rows, fields;
+  if (type === 'users') {
+    rows = await db.prepare('SELECT id, email, name, phone, balance, role, created_at FROM users ORDER BY created_at DESC').all();
+    fields = ['id','email','name','phone','balance','role','created_at'];
+  } else if (type === 'services') {
+    rows = await db.prepare('SELECT s.id, s.user_id, u.name as user_name, u.email as user_email, p.name as product_name, s.status, s.price, s.created_at FROM services s LEFT JOIN users u ON s.user_id = u.id LEFT JOIN products p ON s.product_id = p.id ORDER BY s.created_at DESC').all();
+    fields = ['id','user_id','user_name','user_email','product_name','status','price','created_at'];
+  } else if (type === 'invoices') {
+    rows = await db.prepare('SELECT i.id, i.invoice_no, i.user_id, u.name as user_name, u.email as user_email, i.amount, i.status, i.payment_method, i.created_at, i.paid_at FROM invoices i LEFT JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC').all();
+    fields = ['id','invoice_no','user_id','user_name','user_email','amount','status','payment_method','created_at','paid_at'];
+  } else if (type === 'orders') {
+    rows = await db.prepare("SELECT o.*, u.name as user_name, u.email as user_email, p.name as product_name FROM orders o LEFT JOIN users u ON o.user_id = u.id LEFT JOIN products p ON o.product_id = p.id ORDER BY o.created_at DESC").all();
+    fields = ['id','user_id','user_name','user_email','product_id','product_name','amount','status','created_at'];
+  } else {
+    return res.status(400).json({ error: 'Invalid export type' });
+  }
+  const csv = [fields.join(','), ...rows.map(r => fields.map(f => {
+    const v = r[f]; if (v === null || v === undefined) return '';
+    const s = String(v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(','))].join('\n');
+  res.json({ csv, filename: `${type}-${Date.now()}.csv` });
+});
+
 app.get('/api/admin/services', auth, adminOnly, async (req, res) => {
   res.json(await db.prepare('SELECT s.*, u.name as user_name, p.name as product_name FROM services s LEFT JOIN users u ON s.user_id = u.id LEFT JOIN products p ON s.product_id = p.id ORDER BY s.created_at DESC').all());
 });
@@ -476,6 +823,7 @@ app.post('/api/admin/invoices/:id/status', auth, adminOnly, async (req, res) => 
     if (invoice?.service_id) {
       await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3').run('active', new Date().toISOString(), invoice.service_id);
       await db.prepare('UPDATE orders SET status = $1 WHERE service_id = $2').run('active', invoice.service_id);
+      await autoProvision(invoice.service_id);
     }
   }
   res.json({ success: true });
@@ -493,7 +841,11 @@ app.post('/api/admin/services/status', auth, adminOnly, async (req, res) => {
 
 app.post('/api/admin/services/deliver', auth, adminOnly, async (req, res) => {
   const { service_id, delivery } = req.body;
-  await db.prepare('UPDATE services SET delivery = $1, status = $2, updated_at = $3 WHERE id = $4').run(JSON.stringify(delivery), 'active', new Date().toISOString(), service_id);
+  if (delivery) {
+    await db.prepare('UPDATE services SET delivery = $1, status = $2, updated_at = $3 WHERE id = $4').run(JSON.stringify(delivery), 'active', new Date().toISOString(), service_id);
+  } else {
+    await autoProvision(service_id);
+  }
   res.json({ success: true });
 });
 
@@ -922,6 +1274,7 @@ async function markInvoicePaid(invoiceId, paymentRef, method) {
   if (invoice.service_id) {
     await db.prepare('UPDATE services SET status = $1, updated_at = $2 WHERE id = $3').run('active', new Date().toISOString(), invoice.service_id);
     await db.prepare('UPDATE orders SET status = $1 WHERE service_id = $2').run('active', invoice.service_id);
+    await autoProvision(invoice.service_id);
   }
   await db.prepare('INSERT INTO notifications (id, user_id, title, message, type) VALUES ($1, $2, $3, $4, $5)')
     .run(uuidv4(), invoice.user_id, 'Payment Received', `₹${invoice.amount} paid for ${invoice.invoice_no}`, 'success');
@@ -1066,6 +1419,82 @@ app.post('/api/payment/cf-webhook', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// === Chat Routes ===
+
+app.get('/api/chat/messages', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    if (user_id) {
+      const token = req.headers.authorization?.split(' ')[1];
+      if (!token) return res.status(401).json({ error: 'No token' });
+      try {
+        const user = jwt.verify(token, JWT_SECRET);
+        if (user.role !== 'admin') {
+          const messages = await db.prepare('SELECT * FROM chat_messages WHERE (user_id = $1 OR email = (SELECT email FROM users WHERE id = $1)) ORDER BY created_at ASC').all(user_id);
+          return res.json(messages);
+        }
+      } catch {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+    }
+    const messages = await db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at ASC LIMIT 50").all();
+    res.json(messages);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/messages', async (req, res) => {
+  try {
+    const { name, email, message } = req.body;
+    if (!name || !message) return res.status(400).json({ error: 'Name and message required' });
+    const id = uuidv4();
+    let userId = null;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const user = jwt.verify(token, JWT_SECRET);
+        userId = user.id;
+      } catch {}
+    }
+    await db.prepare('INSERT INTO chat_messages (id, user_id, name, email, message) VALUES ($1, $2, $3, $4, $5)').run(id, userId, name, email || null, message);
+    const created = await db.prepare('SELECT * FROM chat_messages WHERE id = $1').get(id);
+    res.json(created);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/chat/messages/admin', auth, adminOnly, async (req, res) => {
+  try {
+    const { user_id, email } = req.query;
+    if (user_id) {
+      const messages = await db.prepare('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at ASC').all(user_id);
+      return res.json(messages);
+    }
+    if (email) {
+      const messages = await db.prepare('SELECT * FROM chat_messages WHERE email = $1 ORDER BY created_at ASC').all(email);
+      return res.json(messages);
+    }
+    const messages = await db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at ASC LIMIT 50").all();
+    res.json(messages);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/read/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.prepare('UPDATE chat_messages SET is_read = 1 WHERE id = $1').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/reply', auth, adminOnly, async (req, res) => {
+  try {
+    const { user_email, message } = req.body;
+    if (!user_email || !message) return res.status(400).json({ error: 'user_email and message required' });
+    const id = uuidv4();
+    await db.prepare('INSERT INTO chat_messages (id, name, email, message, is_admin) VALUES ($1, $2, $3, $4, $5)').run(id, 'Support', user_email, message, 1);
+    const created = await db.prepare('SELECT * FROM chat_messages WHERE id = $1').get(id);
+    res.json(created);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // === Upload Routes ===

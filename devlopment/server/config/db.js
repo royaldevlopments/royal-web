@@ -166,8 +166,29 @@ try { db.exec(`ALTER TABLE users ADD COLUMN whmcs_client_id TEXT`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN referral_code TEXT UNIQUE`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN referred_by TEXT`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN referral_earnings REAL DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0`); } catch {}
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id),
+    name TEXT NOT NULL,
+    email TEXT,
+    message TEXT NOT NULL,
+    is_admin INTEGER DEFAULT 0,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS recovery_codes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id),
+    code_hash TEXT NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
   CREATE TABLE IF NOT EXISTS activity_log (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -233,6 +254,16 @@ db.exec(`
     name TEXT NOT NULL,
     token TEXT UNIQUE NOT NULL,
     last_used DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS notification_preferences (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) UNIQUE,
+    invoice_emails INTEGER DEFAULT 1,
+    support_emails INTEGER DEFAULT 1,
+    marketing_emails INTEGER DEFAULT 1,
+    service_emails INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);

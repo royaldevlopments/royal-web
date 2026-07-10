@@ -91,6 +91,8 @@ async function ensureSchema() {
     `);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
@@ -306,6 +308,38 @@ async function ensureSchema() {
         name TEXT NOT NULL,
         token TEXT UNIQUE NOT NULL,
         last_used TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS notification_preferences (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) UNIQUE,
+        invoice_emails INTEGER DEFAULT 1,
+        support_emails INTEGER DEFAULT 1,
+        marketing_emails INTEGER DEFAULT 1,
+        service_emails INTEGER DEFAULT 1,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id),
+        name TEXT NOT NULL,
+        email TEXT,
+        message TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS recovery_codes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id),
+        code_hash TEXT NOT NULL,
+        used INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);

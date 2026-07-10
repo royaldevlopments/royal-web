@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { LayoutDashboard, Server, FileText, Ticket, User, Shield, CreditCard, Package, ChevronDown, ChevronLeft, ShieldCheck, ShoppingCart, Wallet, Gift, Key, Globe, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, Server, FileText, Ticket, User, Shield, CreditCard, Package, ChevronDown, ChevronLeft, ShieldCheck, ShoppingCart, Wallet, Gift, Key, Globe, ExternalLink, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api/axios';
 
@@ -34,6 +34,7 @@ export default function Sidebar({ open, setOpen }) {
         { icon: Wallet, label: 'Wallet', path: '/payment-methods' },
         { icon: Gift, label: 'Referrals', path: '/referrals' },
         { icon: Key, label: 'API Tokens', path: '/api-tokens' },
+        { icon: History, label: 'Activity Log', path: '/activity' },
       ]
     },
   ];

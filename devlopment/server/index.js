@@ -28,7 +28,7 @@ import { whmcsApi, createWhmcsClient, createAutoLoginLink, checkDomain } from '.
 
 // ====== MAINTENANCE MODE ======
 app.use((req, res, next) => {
-  if (req.path === '/api/admin/settings' || req.path === '/api/turnstile-key' || req.path === '/api/site-url') return next();
+  if (req.path.startsWith('/api/auth/login') || req.path.startsWith('/api/auth/me') || req.path === '/api/settings/maintenance' || req.path.startsWith('/api/turnstile-key') || req.path.startsWith('/api/_health')) return next();
   const mode = db.prepare("SELECT value FROM settings WHERE key = 'maintenance_mode'").get();
   if (mode?.value === 'true') {
     const token = req.headers.authorization?.split(' ')[1];
@@ -38,7 +38,7 @@ app.use((req, res, next) => {
         if (user.role === 'admin') return next();
       } catch {}
     }
-    return res.status(503).json({ error: 'Under Maintenance' });
+    return res.status(503).json({ error: 'Site is under maintenance. Please check back later.', maintenance: true });
   }
   next();
 });
@@ -102,6 +102,36 @@ function calcTax(amount) {
   const name = db.prepare("SELECT value FROM settings WHERE key = 'tax_name'").get();
   if (!rate || !rate.value || parseFloat(rate.value) <= 0) return { rate: 0, name: '', amount: 0 };
   return { rate: parseFloat(rate.value), name: name?.value || 'Tax', amount: Math.round(amount * parseFloat(rate.value) / 100 * 100) / 100 };
+}
+
+function autoProvision(serviceId) {
+  const service = db.prepare('SELECT s.*, p.delivery_fields FROM services s LEFT JOIN products p ON s.product_id = p.id WHERE s.id = ?').get(serviceId);
+  if (!service) return;
+  let deliveryFields = [];
+  try { deliveryFields = JSON.parse(service.delivery_fields || '[]'); } catch {}
+  if (deliveryFields.length === 0) return;
+  const delivery = {};
+  const idShort = String(serviceId).replace(/-/g, '').slice(0, 8);
+  for (const field of deliveryFields) {
+    const label = field.label || '';
+    let value;
+    if (/password/i.test(label)) {
+      value = crypto.randomBytes(8).toString('hex');
+    } else if (/username|user/i.test(label)) {
+      value = 'u_' + crypto.randomBytes(4).toString('hex');
+    } else if (/hostname|domain|server|url|ip/i.test(label)) {
+      value = 'server' + idShort + '.royaldev.com';
+    } else if (/port/i.test(label)) {
+      value = '2083';
+    } else {
+      value = crypto.randomBytes(6).toString('hex');
+    }
+    delivery[field.key || label] = value;
+  }
+  const now = new Date().toISOString();
+  db.prepare('UPDATE services SET delivery = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(delivery), now, serviceId);
+  db.prepare('INSERT INTO notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)').run(uuidv4(), service.user_id, 'Service Provisioned', `Your service ${service.name} has been provisioned. Check your service details for credentials.`, 'success');
+  logActivity(service.user_id, null, 'provision', `Service ${service.name} auto-provisioned`);
 }
 
 // File upload config
@@ -178,9 +208,41 @@ app.post('/api/auth/login', async (req, res) => {
     if (!(await verifyTurnstile(turnstile_token))) return res.status(400).json({ error: 'Captcha verification failed. Please try again.' });
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Invalid credentials' });
+    if (user.totp_enabled) {
+      const tempToken = jwt.sign({ id: user.id, step: '2fa' }, JWT_SECRET, { expiresIn: '5m' });
+      return res.json({ requires_2fa: true, temp_token: tempToken });
+    }
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     logActivity(user.id, null, 'login', `User logged in: ${email}`);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, balance: user.balance, avatar: user.avatar } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/login/2fa', async (req, res) => {
+  try {
+    const speakeasy = require('speakeasy');
+    const { temp_token, token } = req.body;
+    let payload;
+    try { payload = jwt.verify(temp_token, JWT_SECRET); } catch { return res.status(400).json({ error: 'Session expired' }); }
+    if (payload.step !== '2fa') return res.status(400).json({ error: 'Invalid session' });
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
+    if (!user?.totp_secret) return res.status(400).json({ error: '2FA not configured' });
+    const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token, window: 1 });
+    if (!verified) {
+      const recoveryCodes = db.prepare('SELECT id, code_hash FROM recovery_codes WHERE user_id = ? AND used = 0').all(user.id);
+      let matched = null;
+      for (const rc of recoveryCodes) {
+        if (crypto.createHash('sha256').update(token).digest('hex') === rc.code_hash) {
+          matched = rc.id;
+          break;
+        }
+      }
+      if (!matched) return res.status(400).json({ error: 'Invalid code' });
+      db.prepare('UPDATE recovery_codes SET used = 1 WHERE id = ?').run(matched);
+    }
+    const jwtToken = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    logActivity(user.id, null, 'login', `User logged in with 2FA: ${user.email}`);
+    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, balance: user.balance, avatar: user.avatar } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -331,70 +393,115 @@ app.get('/api/invoices/:id', auth, (req, res) => {
 });
 
 // ====== INVOICE PDF ======
+function renderInvoiceHtml(invoice, user, items, settings) {
+  const currency = settings.currency || 'INR';
+  const taxName = settings.tax_name || 'Tax';
+  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price ?? i.amount) || 0), 0);
+  const statusColor = invoice.status === 'paid' ? '#22c55e' : invoice.status === 'unpaid' ? '#ef4444' : '#f59e0b';
+  const rows = items.map((i, idx) => {
+    const amt = parseFloat(i.price ?? i.amount) || 0;
+    return `<tr><td>${idx + 1}</td><td>${i.name || 'Service'}</td><td class="amt">${currency} ${amt.toFixed(2)}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Invoice ${invoice.invoice_no || invoice.id}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0b1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;padding:40px 20px;display:flex;justify-content:center}
+.invoice{max-width:800px;width:100%;background:#111322;border:1px solid #1e2030;border-radius:16px;padding:48px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px}
+.brand h1{font-size:28px;letter-spacing:-0.5px}
+.brand h1 .accent{color:#1cc4e8}
+.brand h1 .white{color:#f1f5f9}
+.brand .tagline{color:#1cc4e8;font-size:11px;letter-spacing:2px;margin-top:2px;text-transform:uppercase}
+.title h2{font-size:24px;color:#f1f5f9;text-align:right}
+.title .num{color:#64748b;font-size:14px;text-align:right}
+.divider{height:1px;background:#1e2030;margin:24px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px}
+.label{color:#64748b;font-size:12px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
+.value{color:#f1f5f9;font-size:14px;line-height:1.5}
+table{width:100%;border-collapse:collapse;margin-bottom:24px}
+th{text-align:left;padding:12px 8px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #1e2030}
+td{padding:14px 8px;font-size:14px;border-bottom:1px solid rgba(30,32,48,.5);color:#cbd5e1}
+td.amt{text-align:right;font-family:ui-monospace,monospace}
+.totals{margin-left:auto;width:280px}
+.totals .row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px}
+.totals .row .lbl{color:#64748b}
+.totals .row .val{color:#cbd5e1;font-family:ui-monospace,monospace}
+.totals .total{border-top:1px solid #1e2030;margin-top:4px;padding-top:12px;font-size:18px;font-weight:700}
+.totals .total .lbl{color:#f1f5f9}
+.totals .total .val{color:#1cc4e8}
+.status{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:${statusColor};border:1px solid ${statusColor};background:${statusColor}15}
+.footer{text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #1e2030;color:#475569;font-size:12px}
+@media print{body{background:#fff;padding:0}.invoice{box-shadow:none;border:none;border-radius:0}body{background:#0a0b1e}}
+</style>
+</head>
+<body>
+<div class="invoice">
+<div class="header">
+<div class="brand">
+<h1><span class="accent">ROYAL</span> <span class="white">DEVLOPMENTS</span></h1>
+<div class="tagline">Building Solutions Power Future</div>
+</div>
+<div class="title">
+<h2>INVOICE</h2>
+<div class="num">#${invoice.invoice_no || invoice.id}</div>
+</div>
+</div>
+<div class="divider"></div>
+<div class="grid">
+<div>
+<div class="label">Bill To</div>
+<div class="value">${user.name || ''}<br>${user.email || ''}${user.address ? `<br>${user.address}${user.city ? ', ' + user.city : ''}${user.state ? ', ' + user.state : ''}${user.country ? '<br>' + user.country : ''}` : ''}</div>
+</div>
+<div style="text-align:right">
+<div class="label">Status</div>
+<div class="value"><span class="status">${invoice.status || 'unknown'}</span></div>
+<div style="margin-top:12px">
+<div class="label">Issue Date</div>
+<div class="value">${new Date(invoice.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+</div>
+${invoice.due_date ? `<div style="margin-top:12px">
+<div class="label">Due Date</div>
+<div class="value">${new Date(invoice.due_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+</div>` : ''}
+</div>
+</div>
+<div class="divider"></div>
+${invoice.service_name ? `<div style="margin-bottom:20px;font-size:14px"><span class="label">Service</span><div class="value" style="margin-top:4px">${invoice.service_name}</div></div>` : ''}
+<table>
+<thead><tr><th style="width:40px">#</th><th>Item</th><th style="text-align:right;width:140px">Amount</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="3" style="text-align:center;color:#64748b;padding:24px">No line items</td></tr>'}</tbody>
+</table>
+<div class="totals">
+${subtotal !== total ? `<div class="row"><span class="lbl">Subtotal</span><span class="val">${currency} ${subtotal.toFixed(2)}</span></div>` : ''}
+${items[0] && items[0].tax > 0 ? `<div class="row"><span class="lbl">${taxName}</span><span class="val">${currency} ${(parseFloat(items[0].tax) || 0).toFixed(2)}</span></div>` : (taxAmount > 0 ? `<div class="row"><span class="lbl">${taxName}</span><span class="val">${currency} ${taxAmount.toFixed(2)}</span></div>` : '')}
+<div class="row total"><span class="lbl">Total</span><span class="val">${currency} ${(parseFloat(invoice.amount) || 0).toFixed(2)}</span></div>
+</div>
+<div class="footer">Thank you for your business!</div>
+</div>
+</body>
+</html>`;
+}
+
 app.get('/api/invoices/:id/pdf', auth, async (req, res) => {
   try {
-    const PDFDocument = (await import('pdfkit')).default;
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
     const invoice = db.prepare('SELECT i.*, s.name as service_name FROM invoices i LEFT JOIN services s ON i.service_id = s.id WHERE i.id = ? AND (i.user_id = ? OR ? IN (SELECT id FROM users WHERE role = ?))').get(req.params.id, req.user.id, req.user.id, 'admin');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const settings = {};
     db.prepare('SELECT key, value FROM settings').all().forEach(r => settings[r.key] = r.value);
-    const currency = settings.currency || 'INR';
-    const taxName = settings.tax_name || 'GST';
-
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=invoice-${invoice.invoice_no || invoice.id}.pdf`);
-    doc.pipe(res);
-
-    doc.fontSize(24).font('Helvetica-Bold').fillColor('#1cc4e8').text('ROYAL', { continued: true }).fillColor('#f1f5f9').text(' DEVLOPMENTS');
-    doc.fontSize(8).fillColor('#1cc4e8').text('BUILDING SOLUTIONS POWER FUTURE', { width: 200 });
-    doc.moveDown();
-
-    doc.fontSize(18).font('Helvetica-Bold').fillColor('#f1f5f9').text('INVOICE', { align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(`#${invoice.invoice_no || invoice.id}`, { align: 'right' });
-    doc.moveDown();
-
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#334155').stroke();
-    doc.moveDown();
-
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9').text('Bill To:', 50, doc.y);
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(user.name, 50, doc.y + 15);
-    doc.text(user.email, 50, doc.y + 30);
-    doc.text(user.address || '', 50, doc.y + 15);
-
-    const rightX = 350;
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9').text('Invoice Date:', rightX, doc.y - 58);
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(new Date(invoice.created_at).toLocaleDateString(), rightX + 80, doc.y - 15);
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9').text('Status:', rightX, doc.y);
-    doc.fontSize(10).font('Helvetica').fillColor(invoice.status === 'paid' ? '#22c55e' : '#ef4444').text(invoice.status.toUpperCase(), rightX + 80, doc.y + 15);
-
-    doc.moveDown(2);
-    const tableTop = doc.y;
-    const headers = ['Description', 'Amount'];
-    const colWidth = [400, 100];
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#f1f5f9');
-    doc.text(headers[0], 50, tableTop, { width: colWidth[0] });
-    doc.text(headers[1], 450, tableTop, { width: colWidth[1], align: 'right' });
-    doc.moveTo(50, doc.y + 5).lineTo(545, doc.y + 5).strokeColor('#334155').stroke();
-
-    doc.fontSize(10).font('Helvetica').fillColor('#94a3b8');
-    doc.text(invoice.service_name || 'Service', 50, doc.y + 10, { width: colWidth[0] });
-    doc.text(`${currency} ${invoice.amount}`, 450, doc.y - 15, { width: colWidth[1], align: 'right' });
-
-    doc.moveDown(2);
-    const totalY = doc.y;
-    doc.moveTo(350, totalY).lineTo(545, totalY).strokeColor('#334155').stroke();
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#f1f5f9').text('Total:', 350, totalY + 5);
-    doc.text(`${currency} ${invoice.amount}`, 450, totalY + 5, { width: colWidth[1], align: 'right' });
-    if (invoice.tax_amount) {
-      doc.fontSize(10).font('Helvetica').fillColor('#94a3b8').text(`${taxName}:`, 350, doc.y + 5);
-      doc.text(`${currency} ${invoice.tax_amount}`, 450, doc.y - 15, { width: colWidth[1], align: 'right' });
-    }
-
-    doc.moveDown(4);
-    doc.fontSize(8).fillColor('#64748b').text('Thank you for your business!', 50, doc.y, { align: 'center' });
-    doc.end();
+    let items = [];
+    try { items = JSON.parse(invoice.items || '[]'); } catch {}
+    const taxRate = parseFloat(settings.tax_rate || 0);
+    const taxAmount = invoice.amount - subtotal > 0 ? invoice.amount - subtotal : (taxRate > 0 ? Math.round(subtotal * taxRate / 100 * 100) / 100 : 0);
+    const html = renderInvoiceHtml(invoice, user, items, settings);
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Disposition', `inline; filename=invoice-${invoice.invoice_no || invoice.id}.html`);
+    res.send(html);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -416,6 +523,7 @@ app.post('/api/pay/:invoiceId', auth, async (req, res) => {
     db.prepare('UPDATE invoices SET status = ?, paid_at = ?, payment_method = ? WHERE id = ?').run('paid', new Date().toISOString(), methodName, req.params.invoiceId);
     db.prepare('UPDATE services SET status = ?, updated_at = ? WHERE id = ?').run('active', new Date().toISOString(), invoice.service_id);
     db.prepare('UPDATE orders SET status = ? WHERE service_id = ?').run('active', invoice.service_id);
+    autoProvision(invoice.service_id);
     // Wallet payment — deduct balance
     if (method === 'wallet') {
       const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(req.user.id);
@@ -447,6 +555,21 @@ app.get('/api/dashboard', auth, (req, res) => {
   const recentOrders = db.prepare('SELECT o.*, p.name as product_name FROM orders o LEFT JOIN products p ON o.product_id = p.id WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT 5').all(userId);
   const userWhmcs = db.prepare('SELECT whmcs_client_id FROM users WHERE id = ?').get(userId);
   res.json({ stats: { activeServices: activeServices.count, unpaidInvoices: unpaidInvoices.count, openTickets: openTickets.count, totalOrders: totalOrders.count }, recentInvoices, recentServices, recentTickets, recentOrders, whmcs_client_id: userWhmcs?.whmcs_client_id || null });
+});
+
+app.get('/api/dashboard/charts', auth, (req, res) => {
+  const userId = req.user.id;
+  const monthlyInvoices = db.prepare(`
+    SELECT strftime('%b', created_at) as month, CAST(strftime('%m', created_at) AS INTEGER) as m, CAST(strftime('%Y', created_at) AS INTEGER) as y, SUM(amount) as revenue, COUNT(*) as count
+    FROM invoices WHERE user_id = ? AND created_at > datetime('now', '-6 months')
+    GROUP BY y, m, month ORDER BY y, m
+  `).all(userId);
+  const serviceHistory = db.prepare(`
+    SELECT strftime('%b', created_at) as month, CAST(strftime('%m', created_at) AS INTEGER) as m, CAST(strftime('%Y', created_at) AS INTEGER) as y, COUNT(*) as count
+    FROM services WHERE user_id = ? AND created_at > datetime('now', '-6 months')
+    GROUP BY y, m, month ORDER BY y, m
+  `).all(userId);
+  res.json({ monthlyInvoices, serviceHistory });
 });
 
 // ====== TICKETS ======
@@ -493,6 +616,74 @@ app.put('/api/profile/password', auth, async (req, res) => {
   if (!(await bcrypt.compare(current, user.password))) return res.status(400).json({ error: 'Current password incorrect' });
   db.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ?').run(await bcrypt.hash(newpass, 10), new Date().toISOString(), req.user.id);
   res.json({ success: true });
+});
+
+app.get('/api/profile/2fa/status', auth, (req, res) => {
+  const user = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id);
+  res.json({ enabled: !!user?.totp_enabled });
+});
+
+app.post('/api/profile/2fa/setup', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const qrcode = require('qrcode');
+  const secret = speakeasy.generateSecret({ name: 'Royal Devlopments (' + req.user.email + ')' });
+  const qr = await qrcode.toDataURL(secret.otpauth_url);
+  db.prepare('UPDATE users SET totp_secret = ?, updated_at = ? WHERE id = ?').run(secret.base32, new Date().toISOString(), req.user.id);
+  const recoverCodes = [];
+  const insert = db.prepare('INSERT INTO recovery_codes (id, user_id, code_hash) VALUES (?, ?, ?)');
+  for (let i = 0; i < 8; i++) {
+    const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    insert.run(uuidv4(), req.user.id, hash);
+    recoverCodes.push(code);
+  }
+  res.json({ secret: secret.base32, qr, recovery_codes: recoverCodes });
+});
+
+app.post('/api/profile/2fa/verify', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const { token } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user?.totp_secret) return res.status(400).json({ error: '2FA not set up' });
+  const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token });
+  if (!verified) return res.status(400).json({ error: 'Invalid code' });
+  db.prepare('UPDATE users SET totp_enabled = ?, updated_at = ? WHERE id = ?').run(1, new Date().toISOString(), req.user.id);
+  res.json({ success: true });
+});
+
+app.post('/api/profile/2fa/disable', auth, async (req, res) => {
+  const speakeasy = require('speakeasy');
+  const { token, password } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (token) {
+    const verified = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token });
+    if (!verified) return res.status(400).json({ error: 'Invalid code' });
+  } else if (password) {
+    if (!(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Password incorrect' });
+  } else {
+    return res.status(400).json({ error: 'Token or password required' });
+  }
+  db.prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, updated_at = ? WHERE id = ?").run(new Date().toISOString(), req.user.id);
+  res.json({ success: true });
+});
+
+app.post('/api/profile/2fa/recovery-codes', auth, async (req, res) => {
+  db.prepare('UPDATE recovery_codes SET used = 1 WHERE user_id = ? AND used = 0').run(req.user.id);
+  const codes = [];
+  const insert = db.prepare('INSERT INTO recovery_codes (id, user_id, code_hash) VALUES (?, ?, ?)');
+  for (let i = 0; i < 8; i++) {
+    const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    insert.run(uuidv4(), req.user.id, hash);
+    codes.push(code);
+  }
+  res.json({ recovery_codes: codes });
+});
+
+// ====== ACTIVITY ======
+app.get('/api/activity', auth, (req, res) => {
+  const logs = db.prepare('SELECT id, action, details, created_at FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(req.user.id);
+  res.json(logs);
 });
 
 // ====== NOTIFICATIONS ======
@@ -595,6 +786,21 @@ app.get('/api/admin/invoices', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT i.*, u.name as user_name FROM invoices i LEFT JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC').all());
 });
 
+app.post('/api/admin/invoices/:id/status', auth, adminOnly, (req, res) => {
+  const { status } = req.body;
+  if (!['paid', 'unpaid', 'cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  db.prepare('UPDATE invoices SET status = ?, updated_at = ? WHERE id = ?').run(status, new Date().toISOString(), req.params.id);
+  if (status === 'paid') {
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+    if (invoice?.service_id) {
+      db.prepare('UPDATE services SET status = ?, updated_at = ? WHERE id = ?').run('active', new Date().toISOString(), invoice.service_id);
+      db.prepare('UPDATE orders SET status = ? WHERE service_id = ?').run('active', invoice.service_id);
+      autoProvision(invoice.service_id);
+    }
+  }
+  res.json({ success: true });
+});
+
 app.get('/api/admin/tickets', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT t.*, u.name as user_name FROM tickets t LEFT JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC').all());
 });
@@ -607,14 +813,18 @@ app.post('/api/admin/services/status', auth, adminOnly, (req, res) => {
 
 app.post('/api/admin/services/deliver', auth, adminOnly, (req, res) => {
   const { service_id, delivery } = req.body;
-  db.prepare('UPDATE services SET delivery = ?, status = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(delivery), 'active', new Date().toISOString(), service_id);
-  // Link any file uploads in delivery to the service
-  if (delivery && typeof delivery === 'object') {
-    for (const val of Object.values(delivery)) {
-      if (typeof val === 'string' && val.startsWith('upload_')) {
-        try { db.prepare('UPDATE uploads SET service_id = ? WHERE id = ?').run(service_id, val); } catch {}
+  if (delivery) {
+    db.prepare('UPDATE services SET delivery = ?, status = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(delivery), 'active', new Date().toISOString(), service_id);
+    // Link any file uploads in delivery to the service
+    if (typeof delivery === 'object') {
+      for (const val of Object.values(delivery)) {
+        if (typeof val === 'string' && val.startsWith('upload_')) {
+          try { db.prepare('UPDATE uploads SET service_id = ? WHERE id = ?').run(service_id, val); } catch {}
+        }
       }
     }
+  } else {
+    autoProvision(service_id);
   }
   res.json({ success: true });
 });
@@ -819,6 +1029,36 @@ app.post('/api/cron/suspend', auth, adminOnly, (req, res) => {
   res.json({ suspended, total: overdue.length });
 });
 
+// ====== MAINTENANCE STATUS ======
+app.get('/api/settings/maintenance', (req, res) => {
+  const setting = db.prepare("SELECT value FROM settings WHERE key = 'maintenance_mode'").get();
+  res.json({ maintenance: setting?.value === 'true' });
+});
+
+// ====== NOTIFICATION PREFERENCES ======
+app.get('/api/notification-preferences', auth, (req, res) => {
+  let prefs = db.prepare('SELECT * FROM notification_preferences WHERE user_id = ?').get(req.user.id);
+  if (!prefs) {
+    const id = uuidv4();
+    db.prepare('INSERT INTO notification_preferences (id, user_id) VALUES (?, ?)').run(id, req.user.id);
+    prefs = { id, user_id: req.user.id, invoice_emails: 1, support_emails: 1, marketing_emails: 1, service_emails: 1 };
+  }
+  res.json(prefs);
+});
+
+app.put('/api/notification-preferences', auth, (req, res) => {
+  const { invoice_emails, support_emails, marketing_emails, service_emails } = req.body;
+  const existing = db.prepare('SELECT id FROM notification_preferences WHERE user_id = ?').get(req.user.id);
+  if (!existing) {
+    const id = uuidv4();
+    db.prepare('INSERT INTO notification_preferences (id, user_id, invoice_emails, support_emails, marketing_emails, service_emails) VALUES (?, ?, ?, ?, ?, ?)').run(id, req.user.id, invoice_emails ?? 1, support_emails ?? 1, marketing_emails ?? 1, service_emails ?? 1);
+  } else {
+    db.prepare('UPDATE notification_preferences SET invoice_emails = ?, support_emails = ?, marketing_emails = ?, service_emails = ? WHERE user_id = ?').run(invoice_emails ?? 1, support_emails ?? 1, marketing_emails ?? 1, service_emails ?? 1, req.user.id);
+  }
+  const prefs = db.prepare('SELECT * FROM notification_preferences WHERE user_id = ?').get(req.user.id);
+  res.json(prefs);
+});
+
 // ====== TURNSTILE KEY ======
 app.get('/api/turnstile-key', (req, res) => {
   const key = db.prepare("SELECT value FROM settings WHERE key = 'turnstile_key'").get();
@@ -900,6 +1140,80 @@ app.use('/api/payment', paymentRoutes);
 
 // ====== OAUTH ======
 app.use('/api/auth', oauthRoutes);
+
+// ====== CHAT ROUTES ======
+
+app.get('/api/chat/messages', (req, res) => {
+  try {
+    const { user_id } = req.query;
+    if (user_id) {
+      const token = req.headers.authorization?.split(' ')[1];
+      if (!token) return res.status(401).json({ error: 'No token' });
+      try {
+        const user = jwt.verify(token, JWT_SECRET);
+        if (user.role !== 'admin') {
+          const messages = db.prepare('SELECT * FROM chat_messages WHERE (user_id = ? OR email = (SELECT email FROM users WHERE id = ?)) ORDER BY created_at ASC').all(user_id, user_id);
+          return res.json(messages);
+        }
+      } catch {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+    }
+    const messages = db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > datetime('now', '-1 day') ORDER BY created_at ASC LIMIT 50").all();
+    res.json(messages);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/messages', (req, res) => {
+  try {
+    const { name, email, message } = req.body;
+    if (!name || !message) return res.status(400).json({ error: 'Name and message required' });
+    const id = uuidv4();
+    let userId = null;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const user = jwt.verify(token, JWT_SECRET);
+        userId = user.id;
+      } catch {}
+    }
+    db.prepare('INSERT INTO chat_messages (id, user_id, name, email, message) VALUES (?, ?, ?, ?, ?)').run(id, userId, name, email || null, message);
+    const created = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id);
+    res.json(created);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/chat/messages/admin', auth, adminOnly, (req, res) => {
+  try {
+    const { user_id, email } = req.query;
+    if (user_id) {
+      return res.json(db.prepare('SELECT * FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC').all(user_id));
+    }
+    if (email) {
+      return res.json(db.prepare('SELECT * FROM chat_messages WHERE email = ? ORDER BY created_at ASC').all(email));
+    }
+    const messages = db.prepare("SELECT * FROM chat_messages WHERE is_read = 0 OR created_at > datetime('now', '-1 day') ORDER BY created_at ASC LIMIT 50").all();
+    res.json(messages);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/read/:id', auth, adminOnly, (req, res) => {
+  try {
+    db.prepare('UPDATE chat_messages SET is_read = 1 WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/reply', auth, adminOnly, (req, res) => {
+  try {
+    const { user_email, message } = req.body;
+    if (!user_email || !message) return res.status(400).json({ error: 'user_email and message required' });
+    const id = uuidv4();
+    db.prepare('INSERT INTO chat_messages (id, name, email, message, is_admin) VALUES (?, ?, ?, ?, ?)').run(id, 'Support', user_email, message, 1);
+    const created = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id);
+    res.json(created);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ====== SPA catch-all for admin panel at /devlopment/=====
 app.get('*', (req, res) => {

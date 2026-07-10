@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/axios';
-import { ArrowLeft, ExternalLink, Server, Copy, Check, FileText, Download } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Server, Copy, Check, FileText, Download, Key } from 'lucide-react';
 
 export default function ServiceDetail() {
   const { id } = useParams();
@@ -116,19 +116,19 @@ export default function ServiceDetail() {
         );
       })()}
 
-      {/* Delivery Info */}
-      {service.delivery && service.product_delivery_fields && (() => {
-        let d = {}, dfs = [];
-        try { d = typeof service.delivery === 'string' ? JSON.parse(service.delivery) : (service.delivery || {}); } catch {}
-        try { dfs = JSON.parse(service.product_delivery_fields || '[]'); } catch {}
-        const uploads = service.uploads || [];
-        if (dfs.length === 0) return null;
-        return (
-          <div className="card space-y-4">
-            <div className="flex items-center gap-2">
-              <Server className="w-4 h-4 text-success" />
-              <h3 className="text-sm font-semibold text-foreground">Server Access</h3>
-            </div>
+      {/* Credentials */}
+      <div className="card space-y-4">
+        <div className="flex items-center gap-2">
+          <Key className="w-4 h-4 text-success" />
+          <h3 className="text-sm font-semibold text-foreground">Credentials</h3>
+        </div>
+        {service.delivery && service.product_delivery_fields ? (() => {
+          let d = {}, dfs = [];
+          try { d = typeof service.delivery === 'string' ? JSON.parse(service.delivery) : (service.delivery || {}); } catch {}
+          try { dfs = JSON.parse(service.product_delivery_fields || '[]'); } catch {}
+          const uploads = service.uploads || [];
+          if (dfs.length === 0) return <p className="text-sm text-muted-foreground">No credentials configured for this product.</p>;
+          return (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {dfs.map(df => {
                 const val = d[df.key];
@@ -158,9 +158,11 @@ export default function ServiceDetail() {
                 );
               })}
             </div>
-          </div>
-        );
-      })()}
+          );
+        })() : (
+          <p className="text-sm text-muted-foreground">Credentials will appear here once your service is provisioned.</p>
+        )}
+      </div>
 
       {/* Invoices for this service */}
       {service.invoices?.length > 0 && (

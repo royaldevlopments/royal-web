@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api/axios';
-import { Eye, EyeOff, Mail, Lock, Globe, MessageCircle, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Globe, MessageCircle, LogIn, Smartphone, Shield } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -12,6 +12,9 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileKey, setTurnstileKey] = useState('');
+  const [twoFaToken, setTwoFaToken] = useState('');
+  const [twoFaRequired, setTwoFaRequired] = useState(false);
+  const [twoFaTempToken, setTwoFaTempToken] = useState('');
   const turnstileRef = useRef(null);
   const turnstileId = useRef(null);
   const { login, refreshUser } = useAuth();
@@ -50,13 +53,68 @@ export default function Login() {
     if (turnstileKey && !token) { setError('Please complete the captcha'); return; }
     setLoading(true);
     try {
-      await login(email, password, token);
-      navigate('/dashboard');
+      const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, turnstile_token: token }) });
+      if (data.requires_2fa) {
+        setTwoFaRequired(true);
+        setTwoFaTempToken(data.temp_token);
+      } else {
+        localStorage.setItem('token', data.token);
+        refreshUser();
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err.message || 'Login failed');
       if (turnstileId.current) window.turnstile.reset(turnstileId.current);
     } finally { setLoading(false); }
   };
+
+  const handleTwoFa = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await api('/auth/login/2fa', { method: 'POST', body: JSON.stringify({ temp_token: twoFaTempToken, token: twoFaToken }) });
+      localStorage.setItem('token', data.token);
+      refreshUser();
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message || 'Invalid code');
+    } finally { setLoading(false); }
+  };
+
+  if (twoFaRequired) {
+    return (
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#1cc4e8]/20 bg-[#1cc4e8]/5 px-4 py-1.5 text-xs font-medium text-[#1cc4e8] mb-4">
+            <Shield className="w-3.5 h-3.5" /> TWO-FACTOR AUTH
+          </div>
+          <p className="text-muted-foreground text-sm">Enter the code from your authenticator app</p>
+        </div>
+        <div className="relative overflow-hidden rounded-xl border border-border"
+          style={{ background: 'linear-gradient(180deg, hsl(230 20% 10%) 0%, hsl(230 20% 7%) 100%)' }}>
+          <div className="p-8">
+            {error && <div className="mb-5 p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">{error}</div>}
+            <form onSubmit={handleTwoFa} className="space-y-5">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Authentication Code</label>
+                <div className="relative">
+                  <Smartphone className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input value={twoFaToken} onChange={e => setTwoFaToken(e.target.value)} placeholder="000000" maxLength={6}
+                    className="input-field pl-10 text-lg text-center tracking-[8px] font-mono" required />
+                </div>
+              </div>
+              <button type="submit" disabled={loading || twoFaToken.length < 6} className="btn-primary w-full flex items-center justify-center gap-2">
+                {loading ? 'Verifying...' : 'Verify & Sign In'}
+              </button>
+              <button type="button" onClick={() => { setTwoFaRequired(false); setTwoFaToken(''); setTwoFaTempToken(''); }}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors">Back to login</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md">

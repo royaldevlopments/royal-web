@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/axios';
-import { User, Mail, Phone, MapPin } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Bell } from 'lucide-react';
 
 export default function Profile() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', city: '', state: '' });
   const [saved, setSaved] = useState(false);
+  const [prefs, setPrefs] = useState({ invoice_emails: 1, support_emails: 1, marketing_emails: 1, service_emails: 1 });
+  const [prefsSaved, setPrefsSaved] = useState(false);
 
   useEffect(() => {
     api('/auth/me').then(u => setForm({ name: u.name || '', email: u.email || '', phone: u.phone || '', address: u.address || '', city: u.city || '', state: u.state || '' })).catch(() => window.location.href = '/login');
+    api('/notification-preferences').then(p => {
+      setPrefs({ invoice_emails: p.invoice_emails ?? 1, support_emails: p.support_emails ?? 1, marketing_emails: p.marketing_emails ?? 1, service_emails: p.service_emails ?? 1 });
+    }).catch(() => {});
   }, []);
 
   const update = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -20,6 +25,16 @@ export default function Profile() {
       setTimeout(() => setSaved(false), 3000);
     } catch (err) { alert(err.message); }
   };
+
+  const savePrefs = async () => {
+    try {
+      await api('/notification-preferences', { method: 'PUT', body: JSON.stringify(prefs) });
+      setPrefsSaved(true);
+      setTimeout(() => setPrefsSaved(false), 3000);
+    } catch (err) { alert(err.message); }
+  };
+
+  const togglePref = (key) => setPrefs(p => ({ ...p, [key]: p[key] ? 0 : 1 }));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -73,6 +88,35 @@ export default function Profile() {
 
         <button type="submit" className="btn-primary">Save Changes</button>
       </form>
+
+      <h1 className="text-xl font-bold text-foreground flex items-center gap-2"><Bell className="w-5 h-5" /> Notification Preferences</h1>
+
+      <div className="card space-y-4">
+        {prefsSaved && <div className="p-3 bg-success/10 border border-success/20 rounded-lg text-sm text-success">Preferences updated successfully!</div>}
+
+        {[
+          { key: 'invoice_emails', label: 'Invoice Emails', desc: 'Receive emails for new invoices and payment reminders' },
+          { key: 'support_emails', label: 'Support Emails', desc: 'Receive emails for ticket replies and updates' },
+          { key: 'marketing_emails', label: 'Marketing Emails', desc: 'Receive promotional offers and product updates' },
+          { key: 'service_emails', label: 'Service Emails', desc: 'Receive emails for service activation and status changes' },
+        ].map(({ key, label, desc }) => (
+          <div key={key} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-foreground">{label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => togglePref(key)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${prefs[key] ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${prefs[key] ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        ))}
+
+        <button onClick={savePrefs} className="btn-primary">Save Preferences</button>
+      </div>
     </div>
   );
 }
