@@ -1423,7 +1423,59 @@ app.post('/api/payment/cf-webhook', async (req, res) => {
 
 // === AI Chat Routes ===
 
-import { getAIResponse } from './lib/ai-chat.mjs';
+import { shouldUseAI } from './lib/ai-chat.mjs';
+
+const GROQ_KEYS = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
+const CEREBRAS_KEYS = (process.env.CEREBRAS_API_KEYS || process.env.CEREBRAS_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+let keyIndex = 0;
+
+function nextKey() {
+  if (GROQ_KEYS.length === 0) return null;
+  return GROQ_KEYS[keyIndex++ % GROQ_KEYS.length];
+}
+
+async function tryFetch(url, opts, label) {
+  try {
+    const res = await fetch(url, opts);
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content?.trim() || '';
+    }
+    const err = await res.text();
+    if (res.status === 429) { console.log(`[Chat AI] ${label} rate limited`); return null; }
+    console.log(`[Chat AI] ${label} error: ${err.slice(0, 120)}`);
+    return null;
+  } catch (e) { console.log(`[Chat AI] ${label} fetch error:`, e.message); return null; }
+}
+
+async function queryAI(messages) {
+  const body = (model) => ({ model, messages, temperature: 0.7, max_tokens: 512, stream: false });
+
+  // 1) Groq — multiple keys, free, 6k TPM each
+  for (let a = 0; a < Math.max(GROQ_KEYS.length * 2, 4); a++) {
+    const key = nextKey();
+    if (!key) break;
+    const r = await tryFetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body(GROQ_MODEL)),
+    }, 'Groq');
+    if (r) return r;
+  }
+
+  // 2) Cerebras — 1M tokens/day, 30 RPM, free permanent
+  for (let a = 0; a < Math.max(CEREBRAS_KEYS.length, 1); a++) {
+    const key = CEREBRAS_KEYS[a % CEREBRAS_KEYS.length];
+    if (!key) break;
+    const r = await tryFetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body('llama3.1-8b')),
+    }, 'Cerebras');
+    if (r) return r;
+  }
+
+  throw new Error('All AI providers exhausted.');
+}
 
 const chatContexts = new Map();
 
@@ -1440,20 +1492,61 @@ app.post('/api/chat/ai', async (req, res) => {
     if (!message || !message.trim()) return res.status(400).json({ error: 'Message required' });
 
     const sid = session_id || req.ip || 'default';
+    const ip = req.ip || 'unknown';
+    const rateKey = `chat:${ip}`;
+    if (rateLimit(rateKey, 10, 60000)) {
+      return res.status(429).json({ error: 'Too many messages. Please slow down.' });
+    }
     if (!chatContexts.has(sid)) {
-      chatContexts.set(sid, { history: [], updated: Date.now() });
+      chatContexts.set(sid, { history: [], updated: Date.now(), lastMsg: 0 });
     }
     const ctx = chatContexts.get(sid);
+    const cooldown = 10000;
+    const elapsed = Date.now() - ctx.lastMsg;
+    if (ctx.lastMsg > 0 && elapsed < cooldown) {
+      const wait = Math.ceil((cooldown - elapsed) / 1000);
+      return res.json({ reply: `⏳ Please wait ${wait} seconds before sending another message.`, session_id: sid, source: 'cooldown' });
+    }
+    ctx.lastMsg = Date.now();
     ctx.updated = Date.now();
 
-    const reply = getAIResponse(message, ctx.history);
-    ctx.history.push({ role: 'user', text: message });
-    ctx.history.push({ role: 'assistant', text: reply });
-    if (ctx.history.length > 20) {
-      ctx.history.splice(0, ctx.history.length - 20);
+    let reply;
+    let usedSource = 'kb';
+
+    if (GROQ_KEYS.length > 0) {
+            try {
+        const aiMessages = [
+          { role: 'system', content: `You are Shaurya Vashishtha, the founder and AI assistant for Royal Developments. You help with hosting, software development, Discord bots, VPS, web development, DevOps, and technical questions.
+
+Company: Royal Developments (founded by Shaurya Vashishtha)
+Services: game hosting (Minecraft, Palworld, Valheim, ARK, etc.), VPS hosting, web hosting, Discord bot hosting, custom software development, Discord bot development, AI tools, cloud infrastructure, automation systems
+
+Support: support@royaldevlopments.com, 24/7 AI chat
+Payments: UPI, cards, net banking - 7-day money-back guarantee
+
+Be helpful, concise, and professional. Keep responses short.` },
+          ...ctx.history.slice(-6).map(m => ({ role: m.role, content: m.text })),
+          { role: 'user', content: message },
+        ];
+        reply = await queryAI(aiMessages);
+        usedSource = 'groq';
+      } catch (e) {
+        console.error('[Chat AI] Error:', e.message);
+        reply = 'AI service error: ' + e.message;
+      }
+    } else {
+      reply = 'AI service not configured. Contact support to enable.';
     }
 
-    res.json({ reply, session_id: sid });
+    if (usedSource !== 'cooldown') {
+      ctx.history.push({ role: 'user', text: message });
+      ctx.history.push({ role: 'assistant', text: reply });
+      if (ctx.history.length > 12) {
+        ctx.history.splice(0, ctx.history.length - 12);
+      }
+    }
+
+    res.json({ reply, session_id: sid, source: usedSource });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

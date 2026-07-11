@@ -35,7 +35,6 @@ import CloudStoragePlans from "./pages/CloudStoragePlans";
 import DomainSearchPage from "./pages/DomainSearchPage";
 import Downloads from "./pages/Downloads";
 import NotFound from "./pages/NotFound";
-import ChatbotButton from "./components/ChatbotButton";
 import ChatWidget from "./components/ChatWidget";
 import AnimatedBackground from "./components/AnimatedBackground";
 
@@ -47,7 +46,6 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AnimatedBackground />
-      <ChatbotButton />
       <ChatWidget />
       <BrowserRouter>
         <Routes>
